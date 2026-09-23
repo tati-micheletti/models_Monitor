@@ -25,7 +25,7 @@ mkdir -p logs
 
 # module load R/<version>   # uncomment once the exact module name is known
 
-Rscript modules/models_Monitor/R/runClusterTask.R \
+Rscript modules/models_Monitor/cluster/runClusterTask.R \
   --scale landscape \
   --index "${SLURM_ARRAY_TASK_ID}" \
   --run-name test1 \
