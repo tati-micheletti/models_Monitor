@@ -62,6 +62,20 @@ defineModule(sim, list(
                     "Years with real habitat occurrence data -- the meta-model's training",
                     "years. Must match dataPrep_Monitor's/inputs_Monitor's habitatYears."),
 
+    ## Scale resolutions (must match dataPrep_Monitor's/inputs_Monitor's copies) -------
+    defineParameter("climateResolutionM", "numeric", 50000, NA, NA,
+                    "Resolution (m) of the climate scale -- used, via scaleLabel(), to",
+                    "locate that scale's processed covariates and name its inputs/outputs",
+                    "subfolders. Must match dataPrep_Monitor's climateResolutionM."),
+    defineParameter("habitatResolutionM", "numeric", 200, NA, NA,
+                    "Resolution (m) of the habitat scale -- used, via scaleLabel(), to",
+                    "locate that scale's processed covariates and name its inputs/outputs",
+                    "subfolders. Must match dataPrep_Monitor's habitatResolutionM."),
+    defineParameter("landscapeResolutionM", "numeric", 1000, NA, NA,
+                    "Resolution (m) of the landscape scale -- used, via scaleLabel(), to",
+                    "locate that scale's processed covariates and name its inputs/outputs",
+                    "subfolders. Must match dataPrep_Monitor's landscapeResolutionM."),
+
     ## BRT learning-rate search starting points (per Wiedenroth et al. tuning notes) -----
     defineParameter("europeInitialLR", "numeric", 0.01, NA, NA,
                     "Starting learning rate for the European climate BRT's optimizeBRT() search."),
@@ -120,8 +134,9 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           inputsData = sim$inputsData$europe,
           climateTargetYears = P(sim)$climateTargetYears,
           climateWindowLength = P(sim)$climateWindowLength,
-          climateOutputDir = file.path(outputPath(sim), "climate"),
-          outputDir = file.path(outputPath(sim), "models_Monitor", "europe"),
+          climateOutputDir = file.path(inputPath(sim), "predictors", "processed",
+                                        scaleLabel(P(sim)$climateResolutionM)),
+          outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
           initialLR = P(sim)$europeInitialLR)
       }
       # ! ----- STOP EDITING ----- ! #
@@ -133,8 +148,9 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
         sim$habitatModels <- modelGerHabitat(
           inputsData = sim$inputsData$gerHabitat,
           predictionYears = P(sim)$landscapeYears,
-          habitatOutputDir = file.path(outputPath(sim), "habitat"),
-          outputDir = file.path(outputPath(sim), "models_Monitor", "habitat"),
+          habitatOutputDir = file.path(inputPath(sim), "predictors", "processed",
+                                        scaleLabel(P(sim)$habitatResolutionM)),
+          outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM)),
           initialLR = P(sim)$habitatInitialLR)
       }
       # ! ----- STOP EDITING ----- ! #
@@ -146,8 +162,9 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
         sim$landscapeModels <- modelGerLandscape(
           inputsData = sim$inputsData$gerLandscape,
           predictionYears = P(sim)$landscapeYears,
-          landscapeOutputDir = file.path(outputPath(sim), "landscape"),
-          outputDir = file.path(outputPath(sim), "models_Monitor", "landscape"),
+          landscapeOutputDir = file.path(inputPath(sim), "predictors", "processed",
+                                          scaleLabel(P(sim)$landscapeResolutionM)),
+          outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$landscapeResolutionM)),
           initialLR = P(sim)$landscapeInitialLR)
       }
       # ! ----- STOP EDITING ----- ! #
@@ -163,17 +180,23 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
 
         # Static DEM-derived reference grid -- deliberately not any species'
         # habitat prediction, so this never depends on model output ordering.
-        refRaster <- terra::rast(file.path(outputPath(sim), "habitat", "solar_radiation_habitat.tif"))
+        refRaster <- terra::rast(file.path(inputPath(sim), "predictors", "processed",
+                                            scaleLabel(P(sim)$habitatResolutionM),
+                                            "solar_radiation_habitat.tif"))
+
+        resolutionsM <- c(europe = P(sim)$climateResolutionM,
+                           habitat = P(sim)$habitatResolutionM,
+                           landscape = P(sim)$landscapeResolutionM)
 
         sim$metaModels <- metaModel(
           inputsDataGerHabitat = sim$inputsData$gerHabitat,
           habitatYears = P(sim)$habitatYears,
           predictionYears = P(sim)$landscapeYears,
-          modelDirs = list(europe = file.path(outputPath(sim), "models_Monitor", "europe"),
-                            landscape = file.path(outputPath(sim), "models_Monitor", "landscape"),
-                            habitat = file.path(outputPath(sim), "models_Monitor", "habitat")),
+          modelDirs = list(europe = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
+                            landscape = file.path(outputPath(sim), scaleLabel(P(sim)$landscapeResolutionM)),
+                            habitat = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM))),
           refRaster = refRaster,
-          outputDir = file.path(outputPath(sim), "models_Monitor", "meta"))
+          outputDir = file.path(outputPath(sim), metamodelLabel(resolutionsM)))
       }
       # ! ----- STOP EDITING ----- ! #
     },
