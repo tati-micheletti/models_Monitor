@@ -49,6 +49,21 @@
 #' @param changeThresh Numeric. Passed to `computeChangeMaps()`.
 #' @param nBoot Integer. Passed to `computeCombinedIndex()`/`computeChainIndex()`.
 #' @param nSim Integer. Passed to `computeCombinedIndexMSI()`.
+#' @param useBootstrapSE Logical. If TRUE, the Analytical/MSI methods' per-
+#'   species-year SE comes from `metaModel()`'s `{species}_meta_trend_boot.rds`
+#'   files (real model-fitting/bootstrap uncertainty -- see
+#'   `bootstrapMetaModelTrend()`) instead of `extractMetaProbSD()`'s spatial
+#'   standard error of the mean. The spatial SE answers "how precisely do we
+#'   know the mean of this fixed, already-fitted surface" -- it stays narrow
+#'   regardless of how much occurrence data the species actually has, since
+#'   it's driven by grid-cell count, not sample size. The bootstrap SE
+#'   instead reflects how sensitive the fitted model itself is to the
+#'   occurrence sample it was trained on, so it widens for data-poor species
+#'   and narrows for data-rich ones -- the uncertainty question stakeholders
+#'   actually care about when asking "how much should we trust this trend".
+#'   Falls back to spatial SE per-species with a warning if a species has no
+#'   trend-bootstrap file (e.g. `nBootTrend` was 0 for that run). Default
+#'   FALSE, matching all prior runs.
 #' @return Invisibly, a list with `speciesIndex` (matrix), `combinedIndexSBI`,
 #'   `combinedIndexAnalytical`, `combinedIndexMSI`, `combinedIndexChain`,
 #'   `combinedIndexChainRestricted` (NULL if `restrictedYears` is NULL)
@@ -57,7 +72,8 @@
 #'   by `computeChangeMaps()`). Everything is also written to `outputDir`.
 computeAnnualReport <- function(species, baselineYear, currentYear, allYears,
                                  metaDir, outputDir, restrictedYears = NULL,
-                                 changeThresh = 0.05, nBoot = 999, nSim = 1000) {
+                                 changeThresh = 0.05, nBoot = 999, nSim = 1000,
+                                 useBootstrapSE = FALSE) {
 
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
 
@@ -77,6 +93,16 @@ computeAnnualReport <- function(species, baselineYear, currentYear, allYears,
   rownames(indexMat) <- species
 
   seIndexList <- lapply(species, function(sp) {
+    if (useBootstrapSE) {
+      trendBootPath <- file.path(metaDir, paste0(gsub(" ", "_", sp), "_meta_trend_boot.rds"))
+      if (isValidCachedRDS(trendBootPath)) {
+        trendBoot <- readRDS(trendBootPath)
+        rawBootSE <- stats::setNames(trendBoot$bootSE, as.character(trendBoot$year))
+        return(computeIndexSE(rawBootSE, rawBaseline = rawList[[sp]][[baseKey]]))
+      }
+      warning("No trend-bootstrap file for ", sp, " at ", trendBootPath,
+              " -- falling back to spatial SE for this species.")
+    }
     computeIndexSE(rawSDList[[sp]], rawBaseline = rawList[[sp]][[baseKey]])
   })
   names(seIndexList) <- species
