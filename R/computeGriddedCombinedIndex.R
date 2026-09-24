@@ -25,14 +25,20 @@
 #' @param minBaseline Numeric. Per-cell baseline values below this are
 #'   treated as "species effectively absent here" and excluded from that
 #'   cell's geometric mean, rather than producing a huge/unstable ratio.
+#' @param countryBoundary SpatVector or NULL, passed through to
+#'   `aggregateSpeciesToGrid()` -- see its docstring. Cropping this early
+#'   (not just at final display) keeps non-German source cells out of
+#'   every step downstream, including `smoothGriddedIndex()`.
 #' @return SpatRaster, one layer per year (named by year), at `cellSizeM`
 #'   resolution.
 computeGriddedCombinedIndex <- function(species, years, baselineYear, metaDir,
-                                         cellSizeM, minBaseline = 1e-6) {
+                                         cellSizeM, minBaseline = 1e-6,
+                                         countryBoundary = NULL) {
   baseKey <- as.character(baselineYear)
 
   speciesGrids <- lapply(species, aggregateSpeciesToGrid, years = years,
-                         metaDir = metaDir, cellSizeM = cellSizeM)
+                         metaDir = metaDir, cellSizeM = cellSizeM,
+                         countryBoundary = countryBoundary)
   names(speciesGrids) <- species
   speciesGrids <- speciesGrids[!sapply(speciesGrids, is.null)]
 

@@ -13,19 +13,35 @@
 #'   for a 20km grid). Must be a multiple of the source raster's own
 #'   resolution or close to it; `terra::aggregate()`'s `fact` is rounded
 #'   to the nearest whole number of source cells.
+#' @param countryBoundary SpatVector or NULL. If supplied, the 200m source
+#'   raster is cropped and masked to it *before* aggregating -- not just
+#'   for display afterward. The underlying prediction rasters are still the
+#'   uncropped, full-Europe bounding box (a rectangle, not Germany's actual
+#'   outline), so without this, a coarse cell straddling the border can
+#'   quietly average in a few non-German (but non-NA) source cells, and
+#'   `smoothGriddedIndex()` downstream would spread that into neighbouring
+#'   cells too -- cropping only at final display time (e.g. for a map)
+#'   catches neither. NULL (default) skips this and preserves the raw,
+#'   unmasked behavior.
 #' @return SpatRaster, one layer per year with real data (years with a
 #'   missing/unreadable file are silently dropped, with a warning), named
 #'   by year.
-aggregateSpeciesToGrid <- function(species, years, metaDir, cellSizeM) {
+aggregateSpeciesToGrid <- function(species, years, metaDir, cellSizeM, countryBoundary = NULL) {
   spClean <- gsub(" ", "_", species)
+  boundaryProj <- NULL
 
   layers <- lapply(years, function(yr) {
     f <- file.path(metaDir, paste0(spClean, "_meta_suitability_", yr, ".tif"))
     if (!file.exists(f)) return(NULL)
     r <- tryCatch(terra::rast(f), error = function(e) NULL)
     if (is.null(r) || !("meta_prob" %in% names(r))) return(NULL)
+    r <- r[["meta_prob"]]
+    if (!is.null(countryBoundary)) {
+      if (is.null(boundaryProj)) boundaryProj <<- terra::project(countryBoundary, terra::crs(r))
+      r <- terra::mask(terra::crop(r, boundaryProj), boundaryProj)
+    }
     fact <- max(1, round(cellSizeM / terra::res(r)[1]))
-    terra::aggregate(r[["meta_prob"]], fact = fact, fun = "mean", na.rm = TRUE)
+    terra::aggregate(r, fact = fact, fun = "mean", na.rm = TRUE)
   })
 
   valid <- !sapply(layers, is.null)
