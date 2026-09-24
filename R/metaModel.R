@@ -147,8 +147,13 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
           if (!is.null(rClim) && !is.null(rLand) && !is.null(rHab)) {
             suitStack <- c(rClim, rLand, rHab)
             names(suitStack) <- suitCols
-            predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = FALSE)
-            newXByYear[[as.character(yr)]] <- as.matrix(predDf[stats::complete.cases(predDf[, suitCols]), suitCols])
+            # na.rm = TRUE here is essential, not cosmetic: this stack is
+            # still the uncropped full-Europe extent (~738M cells, ~1.9%
+            # real German data -- see improvements.md), so na.rm = FALSE
+            # would materialize a data.frame with ~98% NA rows just to
+            # discard them a line later.
+            predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = TRUE)
+            newXByYear[[as.character(yr)]] <- as.matrix(predDf[, suitCols])
           }
         }
         next
@@ -171,8 +176,8 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       spPredFiles[[as.character(yr)]] <- outTif
 
       if (nBootTrend > 0) {
-        predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = FALSE)
-        newXByYear[[as.character(yr)]] <- as.matrix(predDf[stats::complete.cases(predDf[, suitCols]), suitCols])
+        predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = TRUE)
+        newXByYear[[as.character(yr)]] <- as.matrix(predDf[, suitCols])
       }
     }
 
