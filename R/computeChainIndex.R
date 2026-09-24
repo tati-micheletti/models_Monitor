@@ -25,9 +25,10 @@
 #' otherwise (we have complete, gap-free series for all species, so that
 #' distinction doesn't apply here); (2) diversity-weight the aggregation
 #' across taxonomic/biogeographic groups when combining very different
-#' species sets (not obviously relevant with 11 similarly-surveyed farmland
-#' species, so left unweighted here, matching Zbinden et al.'s own
-#' unweighted approach).
+#' species sets (not obviously relevant with the current roster of
+#' similarly-surveyed farmland species -- see `sharedSpecies` in
+#' sharedConfig.R for the count in force for any given run -- so left
+#' unweighted here, matching Zbinden et al.'s own unweighted approach).
 #'
 #' @param indexMat Numeric matrix, species (rows) x years (columns), of
 #'   per-species indices already baselined via `computeSpeciesIndex()`

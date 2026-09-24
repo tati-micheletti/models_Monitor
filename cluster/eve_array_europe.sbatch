@@ -1,6 +1,6 @@
 #!/bin/bash
 # SLURM job array: fit + cross-validate + predict the European climate BRT,
-# one task per species (11 total). Cheapest of the 3 scales by far --
+# one task per species (12 total -- keep this in sync with length(sharedSpecies) in sharedConfig.R). Cheapest of the 3 scales by far --
 # locally this took ~10-15 seconds PER SPECIES. Walltime below is sized for
 # the case where this task also turns out to be the one that finishes last
 # for its species and self-triggers that species' meta-model (~144-183 min
@@ -16,7 +16,7 @@
 #   sbatch modules/models_Monitor/cluster/eve_array_europe.sbatch
 
 #SBATCH --job-name=birdmon-europe
-#SBATCH --array=1-11
+#SBATCH --array=1-12
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
 #SBATCH --time=04:00:00

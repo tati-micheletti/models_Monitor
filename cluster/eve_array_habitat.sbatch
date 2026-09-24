@@ -1,6 +1,6 @@
 #!/bin/bash
 # SLURM job array: fit + cross-validate + predict the German habitat BRT,
-# one task per species (11 total). This is the dominant cost of the whole
+# one task per species (12 total -- keep this in sync with length(sharedSpecies) in sharedConfig.R). This is the dominant cost of the whole
 # pipeline -- locally it ranged ~57-154 min per species (worst case ~2h34m,
 # ~15.7h total sequentially across all 11). The walltime/mem below give real
 # margin on top of the worst observed case, PLUS enough headroom to also run
@@ -17,7 +17,7 @@
 #   sbatch modules/models_Monitor/cluster/eve_array_habitat.sbatch
 
 #SBATCH --job-name=birdmon-habitat
-#SBATCH --array=1-11
+#SBATCH --array=1-12
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
 #SBATCH --time=06:00:00
