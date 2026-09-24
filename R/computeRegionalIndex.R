@@ -52,6 +52,13 @@ computeRegionalIndex <- function(species, years, baselineYear, metaDir, outputDi
     message("  Saved -> regional_index_", cellKm, "km_{raw,smoothed}.tif")
 
     result[[as.character(cellSizeM)]] <- list(raw = raw, smoothed = smoothed)
+
+    # Each iteration processes a full 21-year raster stack per species;
+    # a real run crashed partway through the 3rd resolution in one session
+    # (no clean R error, consistent with memory pressure) but succeeded
+    # immediately when that same resolution was re-run in isolation --
+    # forcing GC between resolutions is a cheap guard against that.
+    gc(verbose = FALSE)
   }
 
   invisible(result)
