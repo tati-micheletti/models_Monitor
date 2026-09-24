@@ -1,12 +1,14 @@
 #!/bin/bash
 # SLURM job array: fit + cross-validate + predict the German landscape BRT,
 # one task per species (11 total). Locally this ranged ~16-71 min per
-# species (worst case ~71 min) -- the walltime/mem below give real margin
-# on top of that, not a tight fit.
+# species (worst case ~71 min). Walltime below also covers the case where
+# this task turns out to be the one that finishes last for its species and
+# self-triggers that species' meta-model (~144-183 min -- see
+# checkAndRunMeta logic in models_Monitor.R).
 #
 # TODO once your WKDV ticket answer arrives, fill in:
 #   - #SBATCH --partition=<PARTITION>   (ask which partition suits a
-#     single-core, <=16GB, <=2h job)
+#     single-core, <=16GB, <=5h job)
 #   - the `module load` line(s) below, with the exact R module name EVE uses
 #
 # Submit from the birdMonitor repo ROOT (not from inside this cluster/ folder):
@@ -16,7 +18,7 @@
 #SBATCH --array=1-11
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
-#SBATCH --time=02:00:00
+#SBATCH --time=05:00:00
 #SBATCH --output=logs/landscape_%A_%a.out
 #SBATCH --error=logs/landscape_%A_%a.err
 

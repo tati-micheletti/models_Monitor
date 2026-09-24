@@ -84,6 +84,18 @@ defineModule(sim, list(
     defineParameter("landscapeInitialLR", "numeric", 0.08, NA, NA,
                     "Starting learning rate for the German landscape BRT's optimizeBRT() search."),
 
+    ## Cluster-task restriction -- leave both NA for the normal full run; every
+    ## default codepath is unchanged when they're NA. See tools/runClusterTask.R. -
+    defineParameter("runScale", "character", NA_character_, NA, NA,
+                    "NA (default): schedule and run all 4 stages for all species,",
+                    "exactly as the original module did. One of \"europe\"/\"habitat\"/",
+                    "\"landscape\"/\"meta\": schedule only that stage, for a single",
+                    "cluster task. Requires runSpecies to also be set."),
+    defineParameter("runSpecies", "character", NA_character_, NA, NA,
+                    "NA (default): run every species, exactly as the original module",
+                    "did. A single Latin species name: restrict this run to just that",
+                    "species, for a single cluster task. Requires runScale to also be set."),
+
     ## Rerun control ------------------------------------------------------------------
     defineParameter("rerunModelEurope", "logical", FALSE, NA, NA,
                     "Should modelEurope be re-run even if sim$europeModels exists?"),
@@ -121,17 +133,35 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
-      sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelEurope")
-      sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelGerHabitat")
-      sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelGerLandscape")
-      sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
+      if (!is.na(P(sim)$runScale)) {
+        if (is.na(P(sim)$runSpecies)) {
+          stop("runScale is set but runSpecies is NA -- both must be set together ",
+               "for a single cluster task (leave both NA for the normal full run).")
+        }
+        eventName <- switch(P(sim)$runScale,
+                            europe = "modelEurope",
+                            habitat = "modelGerHabitat",
+                            landscape = "modelGerLandscape",
+                            meta = "metaModel",
+                            stop("runScale must be one of: europe, habitat, landscape, meta ",
+                                 "(got: ", P(sim)$runScale, ")"))
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", eventName)
+      } else {
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelEurope")
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelGerHabitat")
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelGerLandscape")
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
+      }
     },
 
     modelEurope = {
       # ! ----- EDIT BELOW ----- ! #
+      inputsData <- sim$inputsData$europe
+      if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
+
       if (is.null(sim$europeModels) || P(sim)$rerunModelEurope) {
         sim$europeModels <- modelEurope(
-          inputsData = sim$inputsData$europe,
+          inputsData = inputsData,
           climateTargetYears = P(sim)$climateTargetYears,
           climateWindowLength = P(sim)$climateWindowLength,
           climateOutputDir = file.path(inputPath(sim), "predictors", "processed",
@@ -139,44 +169,104 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
           initialLR = P(sim)$europeInitialLR)
       }
+
+      if (!is.na(P(sim)$runScale) && checkAllScalesReady(
+            species = P(sim)$runSpecies, outputRoot = outputPath(sim),
+            climateResolutionM = P(sim)$climateResolutionM,
+            habitatResolutionM = P(sim)$habitatResolutionM,
+            landscapeResolutionM = P(sim)$landscapeResolutionM,
+            climateTargetYears = P(sim)$climateTargetYears,
+            landscapeYears = P(sim)$landscapeYears)) {
+        message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
+      }
       # ! ----- STOP EDITING ----- ! #
     },
 
     modelGerHabitat = {
       # ! ----- EDIT BELOW ----- ! #
+      inputsData <- sim$inputsData$gerHabitat
+      if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
+
       if (is.null(sim$habitatModels) || P(sim)$rerunModelGerHabitat) {
         sim$habitatModels <- modelGerHabitat(
-          inputsData = sim$inputsData$gerHabitat,
+          inputsData = inputsData,
           predictionYears = P(sim)$landscapeYears,
           habitatOutputDir = file.path(inputPath(sim), "predictors", "processed",
                                         scaleLabel(P(sim)$habitatResolutionM)),
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM)),
           initialLR = P(sim)$habitatInitialLR)
       }
+
+      if (!is.na(P(sim)$runScale) && checkAllScalesReady(
+            species = P(sim)$runSpecies, outputRoot = outputPath(sim),
+            climateResolutionM = P(sim)$climateResolutionM,
+            habitatResolutionM = P(sim)$habitatResolutionM,
+            landscapeResolutionM = P(sim)$landscapeResolutionM,
+            climateTargetYears = P(sim)$climateTargetYears,
+            landscapeYears = P(sim)$landscapeYears)) {
+        message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
+      }
       # ! ----- STOP EDITING ----- ! #
     },
 
     modelGerLandscape = {
       # ! ----- EDIT BELOW ----- ! #
+      inputsData <- sim$inputsData$gerLandscape
+      if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
+
       if (is.null(sim$landscapeModels) || P(sim)$rerunModelGerLandscape) {
         sim$landscapeModels <- modelGerLandscape(
-          inputsData = sim$inputsData$gerLandscape,
+          inputsData = inputsData,
           predictionYears = P(sim)$landscapeYears,
           landscapeOutputDir = file.path(inputPath(sim), "predictors", "processed",
                                           scaleLabel(P(sim)$landscapeResolutionM)),
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$landscapeResolutionM)),
           initialLR = P(sim)$landscapeInitialLR)
       }
+
+      if (!is.na(P(sim)$runScale) && checkAllScalesReady(
+            species = P(sim)$runSpecies, outputRoot = outputPath(sim),
+            climateResolutionM = P(sim)$climateResolutionM,
+            habitatResolutionM = P(sim)$habitatResolutionM,
+            landscapeResolutionM = P(sim)$landscapeResolutionM,
+            climateTargetYears = P(sim)$climateTargetYears,
+            landscapeYears = P(sim)$landscapeYears)) {
+        message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
+        sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
+      }
       # ! ----- STOP EDITING ----- ! #
     },
 
     metaModel = {
       # ! ----- EDIT BELOW ----- ! #
-      if (is.null(sim$metaModels) || P(sim)$rerunMetaModel) {
-        if (is.null(sim$europeModels) || is.null(sim$habitatModels) || is.null(sim$landscapeModels)) {
-          stop("metaModel requires europeModels/habitatModels/landscapeModels -- check the ",
-               "modelEurope/modelGerHabitat/modelGerLandscape events ran first.")
+      clusterMode <- !is.na(P(sim)$runScale)
+
+      if (clusterMode) {
+        # Reached either self-triggered (the scale event that just finished
+        # already confirmed readiness) or via a directly-submitted
+        # `--scale meta` task (e.g. a manual re-run for a species some
+        # earlier task failed on) -- re-check either way, and no-op rather
+        # than error if the other scales genuinely aren't ready yet.
+        if (!checkAllScalesReady(
+              species = P(sim)$runSpecies, outputRoot = outputPath(sim),
+              climateResolutionM = P(sim)$climateResolutionM,
+              habitatResolutionM = P(sim)$habitatResolutionM,
+              landscapeResolutionM = P(sim)$landscapeResolutionM,
+              climateTargetYears = P(sim)$climateTargetYears,
+              landscapeYears = P(sim)$landscapeYears)) {
+          message(P(sim)$runSpecies, ": not all 3 scales ready yet -- skipping metaModel for now.")
+          return(invisible(sim))
         }
+      } else if (is.null(sim$europeModels) || is.null(sim$habitatModels) || is.null(sim$landscapeModels)) {
+        stop("metaModel requires europeModels/habitatModels/landscapeModels -- check the ",
+             "modelEurope/modelGerHabitat/modelGerLandscape events ran first.")
+      }
+
+      if (is.null(sim$metaModels) || P(sim)$rerunMetaModel) {
+        inputsDataGerHabitat <- sim$inputsData$gerHabitat
+        if (!is.na(P(sim)$runSpecies)) inputsDataGerHabitat <- inputsDataGerHabitat[P(sim)$runSpecies]
 
         # Static DEM-derived reference grid -- deliberately not any species'
         # habitat prediction, so this never depends on model output ordering.
@@ -189,7 +279,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                            landscape = P(sim)$landscapeResolutionM)
 
         sim$metaModels <- metaModel(
-          inputsDataGerHabitat = sim$inputsData$gerHabitat,
+          inputsDataGerHabitat = inputsDataGerHabitat,
           habitatYears = P(sim)$habitatYears,
           predictionYears = P(sim)$landscapeYears,
           modelDirs = list(europe = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),

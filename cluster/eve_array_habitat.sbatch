@@ -3,7 +3,10 @@
 # one task per species (11 total). This is the dominant cost of the whole
 # pipeline -- locally it ranged ~57-154 min per species (worst case ~2h34m,
 # ~15.7h total sequentially across all 11). The walltime/mem below give real
-# margin on top of the worst observed case.
+# margin on top of the worst observed case, PLUS enough headroom to also run
+# that species' meta-model if this task turns out to be the one that
+# finishes last for it (self-triggers automatically -- see
+# checkAllScalesReady() in models_Monitor.R; no action needed here).
 #
 # TODO once your WKDV ticket answer arrives, fill in:
 #   - #SBATCH --partition=<PARTITION>   (ask which partition suits a
@@ -17,7 +20,7 @@
 #SBATCH --array=1-11
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=16G
-#SBATCH --time=04:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=logs/habitat_%A_%a.out
 #SBATCH --error=logs/habitat_%A_%a.err
 
