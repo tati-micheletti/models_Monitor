@@ -28,15 +28,34 @@
 #'   from, and in addition to, spatial-averaging precision. Default 0 (off):
 #'   existing runs are unaffected unless this is explicitly requested, since
 #'   it adds `nBootTrend` extra ridge refits per species.
+#' @param gadmCacheDir Character. Directory to cache the GADM Germany
+#'   boundary in (only used, and only fetched, when `nBootTrend > 0`) --
+#'   see `bootRefRaster` below.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `varimpPath`,
 #'   `predictions` (named by year), `perf`, `varimp`, and (if `nBootTrend > 0`)
 #'   `trendBootPath`/`trendBoot`.
 metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, modelDirs,
-                       refRaster, outputDir, nBootTrend = 0) {
+                       refRaster, outputDir, nBootTrend = 0, gadmCacheDir = NULL) {
 
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
   suitCols <- c("climate_mean_prob", "landscape_mean_prob", "habitat_mean_prob")
   idCols <- c("AREA_NATIONAL_CODE", "latin_name", "occurrence", "x", "y", "foldID")
+
+  # A Germany-cropped copy of refRaster, used ONLY for getOrBuildSuitX()'s
+  # resample() calls below -- refRaster itself (and every prediction this
+  # function writes) stays at its original, uncropped, full-Europe extent,
+  # unchanged from before nBootTrend existed. Cropping first is what makes
+  # that resample affordable: it scales with the target grid's size, and a
+  # real timed dry run showed ~85 minutes for one species at the
+  # uncropped extent (~738M cells, ~1.9% real German data) -- Germany's
+  # real extent is a small fraction of that.
+  bootRefRaster <- refRaster
+  if (nBootTrend > 0) {
+    germany <- geodata::gadm(country = "DEU", level = 0,
+                              path = if (is.null(gadmCacheDir)) tempdir() else gadmCacheDir)
+    germanyProj <- terra::project(germany, terra::crs(refRaster))
+    bootRefRaster <- terra::crop(refRaster, germanyProj)
+  }
 
   result <- list()
 
@@ -141,20 +160,8 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
         message("Year ", yr, ": cache hit")
         spPredFiles[[as.character(yr)]] <- outTif
         if (nBootTrend > 0) {
-          rClim <- loadSuitability("climate", spClean, yr, modelDirs, refRaster)
-          rLand <- loadSuitability("landscape", spClean, yr, modelDirs, refRaster)
-          rHab <- loadSuitability("habitat", spClean, yr, modelDirs, refRaster)
-          if (!is.null(rClim) && !is.null(rLand) && !is.null(rHab)) {
-            suitStack <- c(rClim, rLand, rHab)
-            names(suitStack) <- suitCols
-            # na.rm = TRUE here is essential, not cosmetic: this stack is
-            # still the uncropped full-Europe extent (~738M cells, ~1.9%
-            # real German data -- see improvements.md), so na.rm = FALSE
-            # would materialize a data.frame with ~98% NA rows just to
-            # discard them a line later.
-            predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = TRUE)
-            newXByYear[[as.character(yr)]] <- as.matrix(predDf[, suitCols])
-          }
+          suitX <- getOrBuildSuitX(spClean, yr, modelDirs, bootRefRaster, suitCols, outputDir)
+          if (!is.null(suitX)) newXByYear[[as.character(yr)]] <- suitX
         }
         next
       }
@@ -176,8 +183,11 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       spPredFiles[[as.character(yr)]] <- outTif
 
       if (nBootTrend > 0) {
+        cachePath <- file.path(outputDir, paste0(spClean, "_meta_suitX_", yr, ".rds"))
         predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = TRUE)
-        newXByYear[[as.character(yr)]] <- as.matrix(predDf[, suitCols])
+        suitX <- as.matrix(predDf[, suitCols])
+        saveRDS(suitX, cachePath)
+        newXByYear[[as.character(yr)]] <- suitX
       }
     }
 

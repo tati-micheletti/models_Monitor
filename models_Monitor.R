@@ -22,7 +22,7 @@ defineModule(sim, list(
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "models_Monitor.Rmd"),
   reqdPkgs = list("PredictiveEcology/SpaDES.core@development (>= 3.2.0)",
-                   "terra", "dismo", "gbm", "glmnet", "PresenceAbsence"),
+                   "terra", "dismo", "gbm", "glmnet", "PresenceAbsence", "geodata"),
   parameters = bindrows(
     defineParameter(".plots", "character", "screen", NA, NA,
                     "Used by Plots function, which can be optionally used here"),
@@ -292,7 +292,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                             habitat = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM))),
           refRaster = refRaster,
           outputDir = file.path(outputPath(sim), metamodelLabel(resolutionsM)),
-          nBootTrend = P(sim)$nBootTrend)
+          nBootTrend = P(sim)$nBootTrend,
+          gadmCacheDir = file.path(inputPath(sim), "predictors", "raw", "gadm"))
       }
       # ! ----- STOP EDITING ----- ! #
     },
