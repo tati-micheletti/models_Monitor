@@ -12,8 +12,12 @@
 #' @param baselineYear Integer. Index baseline.
 #' @param metaDir Character. `metaModel()`'s output directory.
 #' @param outputDir Character. Directory to save outputs in.
-#' @param cellSizesM Numeric vector. Grid cell sizes to compute, in meters
-#'   (default 10km, 20km and 50km).
+#' @param cellSizesM Numeric vector. Grid cell sizes to compute, in meters.
+#'   Required, no default -- deliberately: which resolutions to produce is
+#'   a real decision (see `sharedRegionalCellSizesM` in `sharedConfig.R`,
+#'   the canonical answer), not something this function should silently
+#'   fall back to. Every caller should pass `sharedRegionalCellSizesM`
+#'   rather than typing cell sizes inline.
 #' @param smoothRadiusFactor Numeric. Passed to `smoothGriddedIndex()`.
 #' @param countryBoundary SpatVector or NULL, passed through to
 #'   `computeGriddedCombinedIndex()`/`aggregateSpeciesToGrid()`. Strongly
@@ -27,7 +31,7 @@
 #'   `regional_index_<cellSizeKm>km_raw.tif` /
 #'   `regional_index_<cellSizeKm>km_smoothed.tif`.
 computeRegionalIndex <- function(species, years, baselineYear, metaDir, outputDir,
-                                  cellSizesM = c(10000, 20000, 50000), smoothRadiusFactor = 1.5,
+                                  cellSizesM, smoothRadiusFactor = 1.5,
                                   countryBoundary = NULL) {
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
   result <- list()
