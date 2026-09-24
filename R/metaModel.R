@@ -22,10 +22,17 @@
 #'   species' habitat prediction, so the reference grid never depends on
 #'   model output ordering).
 #' @param outputDir Character. Directory to save model/performance/prediction outputs in.
+#' @param nBootTrend Integer. If > 0, also bootstrap the ridge fit
+#'   `nBootTrend` times (see `bootstrapMetaModelTrend()`) to quantify
+#'   model-fitting uncertainty in the per-year area-mean trend -- distinct
+#'   from, and in addition to, spatial-averaging precision. Default 0 (off):
+#'   existing runs are unaffected unless this is explicitly requested, since
+#'   it adds `nBootTrend` extra ridge refits per species.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `varimpPath`,
-#'   `predictions` (named by year), `perf`, and `varimp`.
+#'   `predictions` (named by year), `perf`, `varimp`, and (if `nBootTrend > 0`)
+#'   `trendBootPath`/`trendBoot`.
 metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, modelDirs,
-                       refRaster, outputDir) {
+                       refRaster, outputDir, nBootTrend = 0) {
 
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
   suitCols <- c("climate_mean_prob", "landscape_mean_prob", "habitat_mean_prob")
@@ -125,6 +132,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
             paste(range(habitatYears), collapse = "-"), " relationships)")
 
     spPredFiles <- list()
+    newXByYear <- list()
 
     for (yr in predictionYears) {
       outTif <- file.path(outputDir, paste0(spClean, "_meta_suitability_", yr, ".tif"))
@@ -132,6 +140,17 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       if (isValidPredictionRaster(outTif, layerName = "meta_prob")) {
         message("Year ", yr, ": cache hit")
         spPredFiles[[as.character(yr)]] <- outTif
+        if (nBootTrend > 0) {
+          rClim <- loadSuitability("climate", spClean, yr, modelDirs, refRaster)
+          rLand <- loadSuitability("landscape", spClean, yr, modelDirs, refRaster)
+          rHab <- loadSuitability("habitat", spClean, yr, modelDirs, refRaster)
+          if (!is.null(rClim) && !is.null(rLand) && !is.null(rHab)) {
+            suitStack <- c(rClim, rLand, rHab)
+            names(suitStack) <- suitCols
+            predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = FALSE)
+            newXByYear[[as.character(yr)]] <- as.matrix(predDf[stats::complete.cases(predDf[, suitCols]), suitCols])
+          }
+        }
         next
       }
 
@@ -150,10 +169,31 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       predictRidgeToRaster(suitStack, suitCols, ridgeM$model, ridgeM$lambda, metaPerf$thresh, outTif)
       message("Year ", yr, ": saved -> ", basename(outTif))
       spPredFiles[[as.character(yr)]] <- outTif
+
+      if (nBootTrend > 0) {
+        predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = FALSE)
+        newXByYear[[as.character(yr)]] <- as.matrix(predDf[stats::complete.cases(predDf[, suitCols]), suitCols])
+      }
+    }
+
+    trendBootPath <- NULL
+    trendBoot <- NULL
+    if (nBootTrend > 0 && length(newXByYear) > 0) {
+      trendBootPath <- file.path(outputDir, paste0(spClean, "_meta_trend_boot.rds"))
+      if (isValidCachedRDS(trendBootPath)) {
+        message("Loading cached trend bootstrap...")
+        trendBoot <- readRDS(trendBootPath)
+      } else {
+        message("Bootstrapping ridge fit (", nBootTrend, " reps) for trend uncertainty...")
+        trendBoot <- bootstrapMetaModelTrend(X, y, newXByYear, nBoot = nBootTrend)
+        saveRDS(trendBoot, trendBootPath)
+        message("Trend bootstrap saved -> ", trendBootPath)
+      }
     }
 
     result[[sp]] <- list(modelPath = outModel, perfPath = outPerf, varimpPath = outVarimp,
-                          predictions = spPredFiles, perf = metaPerf, varimp = varimp)
+                          predictions = spPredFiles, perf = metaPerf, varimp = varimp,
+                          trendBootPath = trendBootPath, trendBoot = trendBoot)
     message("  == Done: ", sp, " ==============================")
   }
 

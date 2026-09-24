@@ -104,7 +104,12 @@ defineModule(sim, list(
     defineParameter("rerunModelGerLandscape", "logical", FALSE, NA, NA,
                     "Should modelGerLandscape be re-run even if sim$landscapeModels exists?"),
     defineParameter("rerunMetaModel", "logical", FALSE, NA, NA,
-                    "Should metaModel be re-run even if sim$metaModels exists?")
+                    "Should metaModel be re-run even if sim$metaModels exists?"),
+    defineParameter("nBootTrend", "numeric", 0, NA, NA,
+                    paste("If > 0, bootstrap the ridge meta-model this many times per",
+                    "species to quantify model-fitting uncertainty in the per-year",
+                    "area-mean trend (see bootstrapMetaModelTrend()), in addition to",
+                    "spatial-averaging precision. 0 (default): off, no added cost."))
   ),
   inputObjects = bindrows(
     expectsInput("inputsData", "list",
@@ -286,7 +291,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                             landscape = file.path(outputPath(sim), scaleLabel(P(sim)$landscapeResolutionM)),
                             habitat = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM))),
           refRaster = refRaster,
-          outputDir = file.path(outputPath(sim), metamodelLabel(resolutionsM)))
+          outputDir = file.path(outputPath(sim), metamodelLabel(resolutionsM)),
+          nBootTrend = P(sim)$nBootTrend)
       }
       # ! ----- STOP EDITING ----- ! #
     },
