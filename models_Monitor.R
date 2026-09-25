@@ -93,6 +93,16 @@ defineModule(sim, list(
                     "Starting learning rate for the German habitat BRT's optimizeBRT() search."),
     defineParameter("landscapeInitialLR", "numeric", 0.08, NA, NA,
                     "Starting learning rate for the German landscape BRT's optimizeBRT() search."),
+    defineParameter("perSpeciesGeneralConfig", "list", NULL, NA, NA,
+                    "NULL (default): every species uses the shared *InitialLR parameters above.",
+                    "Otherwise the nested list species -> scale -> settings produced by",
+                    "loadSpeciesGeneralConfig() (sharedSpeciesConfig.R, repo root) from",
+                    "speciesConfig_general.csv -- only its brt_start_lr field is consumed here,",
+                    "as a per-species starting-LR override (see resolveStartingLR() in",
+                    "brtLearningRateState.R). resolution_m/thinning_dist_m in that same file are",
+                    "for dataPrep_Monitor instead; hedges_treatment for inputs_Monitor. Resolved",
+                    "once by the orchestrating script and passed in as a plain value, same",
+                    "pattern as sharedConfig.R's other shared values."),
 
     ## Cluster-task restriction -- leave both NA for the normal full run; every
     ## default codepath is unchanged when they're NA. See tools/runClusterTask.R. -
@@ -185,7 +195,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           climateOutputDir = file.path(inputPath(sim), "predictors", "processed",
                                         scaleLabel(P(sim)$climateResolutionM)),
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
-          initialLR = P(sim)$europeInitialLR)
+          initialLR = P(sim)$europeInitialLR,
+          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "climate"))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
@@ -216,7 +227,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           habitatOutputDir = file.path(inputPath(sim), "predictors", "processed",
                                         scaleLabel(P(sim)$habitatResolutionM)),
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM)),
-          initialLR = P(sim)$habitatInitialLR)
+          initialLR = P(sim)$habitatInitialLR,
+          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "habitat"))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
@@ -251,7 +263,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           landscapeOutputDir = file.path(inputPath(sim), "predictors", "processed",
                                           scaleLabel(landscapeResM)),
           outputDir = file.path(outputPath(sim), scaleLabel(landscapeResM)),
-          initialLR = P(sim)$landscapeInitialLR)
+          initialLR = P(sim)$landscapeInitialLR,
+          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "landscape"))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
