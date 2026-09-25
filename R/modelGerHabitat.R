@@ -12,11 +12,15 @@
 #' @param predictionYears Integer vector of years to predict onto.
 #' @param habitatOutputDir Character. Directory of habitat-scale covariate rasters.
 #' @param outputDir Character. Directory to save model/performance/prediction outputs in.
-#' @param initialLR Numeric. Starting learning rate for `optimizeBRT()`.
+#' @param initialLR Numeric. Default starting learning rate for `optimizeBRT()`,
+#'   used when a species has neither a `perSpeciesLR` override nor a
+#'   previously-persisted converged LR (see `resolveStartingLR()`).
+#' @param perSpeciesLR Named numeric vector/list, or NULL (default). Per-species
+#'   starting-LR overrides, keyed by species Latin name.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `predictions`
 #'   (named by year), and `perf` (the evalSDM() row).
 modelGerHabitat <- function(inputsData, predictionYears, habitatOutputDir, outputDir,
-                             initialLR = 0.08) {
+                             initialLR = 0.08, perSpeciesLR = NULL) {
 
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
   result <- list()
@@ -39,8 +43,11 @@ modelGerHabitat <- function(inputsData, predictionYears, habitatOutputDir, outpu
       message("Loading cached BRT model...")
       brtM <- readRDS(outModel)
     } else {
-      message("Training BRT (optimising learning rate)...")
-      brtM <- optimizeBRT(spPa, predSel, "occurrence", initialLR)
+      startingLR <- resolveStartingLR(sp, spClean, defaultLR = initialLR, lrStateDir = outputDir,
+                                       perSpeciesLR = perSpeciesLR, lrStateSuffix = "_habitat")
+      message("Training BRT (optimising learning rate, starting from ", startingLR, ")...")
+      brtM <- optimizeBRT(spPa, predSel, "occurrence", startingLR)
+      persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_habitat")
       saveRDS(brtM, outModel)
       message("Model saved -> ", outModel)
     }
