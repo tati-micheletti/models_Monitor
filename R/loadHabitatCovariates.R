@@ -27,9 +27,11 @@ loadHabitatCovariates <- function(year, habitatDir) {
 
   luFile <- file.path(habitatDir, paste0("landuse_", year, "_habitat.tif"))
   lcFile <- file.path(habitatDir, paste0("landcover_", corineYr, "_habitat.tif"))
+  # solar_radiation intentionally excluded (see DECISIONS.md, 2026-09-26 --
+  # dropped as a predictor for every species, not well-scaled/possibly
+  # capturing noise from other unmodeled factors)
   demFiles <- c(file.path(habitatDir, "elevation_habitat.tif"),
-                file.path(habitatDir, "slope_habitat.tif"),
-                file.path(habitatDir, "solar_radiation_habitat.tif"))
+                file.path(habitatDir, "slope_habitat.tif"))
 
   missing <- c(luFile, lcFile, demFiles)[!file.exists(c(luFile, lcFile, demFiles))]
   if (length(missing) > 0) {
@@ -41,7 +43,6 @@ loadHabitatCovariates <- function(year, habitatDir) {
   lc <- terra::rast(lcFile)
   elev <- terra::rast(demFiles[1])
   slope <- terra::rast(demFiles[2])
-  solar <- terra::rast(demFiles[3])
 
   # Resample all to land use reference grid (resolves origin offsets
   # between layers, same fix as landscape scale in loadCovariates())
@@ -49,9 +50,8 @@ loadHabitatCovariates <- function(year, habitatDir) {
   lc <- terra::resample(lc, luRef, method = "bilinear")
   elev <- terra::resample(elev, luRef, method = "bilinear")
   slope <- terra::resample(slope, luRef, method = "bilinear")
-  solar <- terra::resample(solar, luRef, method = "bilinear")
 
-  covStack <- c(lu, lc, elev, slope, solar)
+  covStack <- c(lu, lc, elev, slope)
 
   # Strip year/CORINE suffixes so column names match the training data
   names(covStack) <- gsub("_\\d{4}$", "", names(covStack))

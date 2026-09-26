@@ -96,7 +96,10 @@ modelGerLandscape <- function(inputsData, predictionYears, landscapeOutputDir, o
       }
       names(covStack) <- gsub("_\\d{4}$", "", names(covStack))
 
-      missingPreds <- setdiff(predSel, names(covStack))
+      # x/y are never actual covStack layers -- predictBRTToRaster() derives
+      # them from the raster's own cell coordinates (see DECISIONS.md,
+      # 2026-09-26), so they're never "missing" here.
+      missingPreds <- setdiff(predSel, c(names(covStack), "x", "y"))
       if (length(missingPreds) > 0) {
         warning("Year ", yr, ": missing predictors: ", paste(missingPreds, collapse = ", "))
         next

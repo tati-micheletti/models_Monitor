@@ -42,9 +42,11 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
   lc <- terra::rast(lcFile)
 
   # DEM derivatives (static)
+  # solar_radiation intentionally excluded (see DECISIONS.md, 2026-09-26 --
+  # dropped as a predictor for every species, not well-scaled/possibly
+  # capturing noise from other unmodeled factors)
   elev <- terra::rast(file.path(landscapeDir, "elevation_landscape.tif"))
   slope <- terra::rast(file.path(landscapeDir, "slope_landscape.tif"))
-  solar <- terra::rast(file.path(landscapeDir, "solar_radiation_landscape.tif"))
 
   names(lu) <- paste0(names(lu), "_", year)
   names(lc) <- paste0(names(lc), "_", corineYr)
@@ -57,7 +59,6 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
   lc <- terra::resample(lc, luRef, method = "bilinear")
   elev <- terra::resample(elev, luRef, method = "bilinear")
   slope <- terra::resample(slope, luRef, method = "bilinear")
-  solar <- terra::resample(solar, luRef, method = "bilinear")
 
   # Hedges back/forward-filling
   # Hedge data availability:
@@ -95,7 +96,7 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
     }
   }
 
-  covStack <- c(lu, lc, elev, slope, solar)
+  covStack <- c(lu, lc, elev, slope)
   message("Covariate stack: ", terra::nlyr(covStack), " layers")
   covStack
 }

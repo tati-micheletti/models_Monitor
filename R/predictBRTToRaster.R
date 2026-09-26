@@ -13,14 +13,22 @@
 #' matters downstream since the meta-model resamples every scale's
 #' prediction onto a shared reference grid.
 #'
-#' @param covStack SpatRaster stack containing at least the columns in `predictors`.
+#' @param covStack SpatRaster stack containing at least the non-coordinate
+#'   columns in `predictors` -- `x`/`y` (if present in `predictors`) are
+#'   never expected as actual layers; they're derived from `covStack`'s own
+#'   cell coordinates instead (see DECISIONS.md, 2026-09-26).
 #' @param predictors Character vector of predictor column names.
 #' @param brtModel A fitted `gbm.step()` model.
 #' @param thresh Numeric. Binary classification threshold.
 #' @param outPath Character. Output file path.
 #' @return Invisibly, `outPath`.
 predictBRTToRaster <- function(covStack, predictors, brtModel, thresh, outPath) {
-  predRast <- covStack[[predictors]]
+  rasterPredictors <- setdiff(predictors, c("x", "y"))
+  predRast <- covStack[[rasterPredictors]]
+  # xy = TRUE supplies "x"/"y" columns (this raster's own cell coordinates,
+  # same CRS/grid as everything else) for free -- exactly matching how the
+  # training data's own x/y columns were extracted (terra::extract() from
+  # the same covariate stack), so no separate synthetic layer is needed.
   predDf <- as.data.frame(predRast, xy = TRUE, na.rm = FALSE)
 
   completeIdx <- stats::complete.cases(predDf[, predictors])
