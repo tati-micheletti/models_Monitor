@@ -47,6 +47,12 @@ modelGerHabitat <- function(inputsData, predictionYears, habitatOutputDir, outpu
                                        perSpeciesLR = perSpeciesLR, lrStateSuffix = "_habitat")
       message("Training BRT (optimising learning rate, starting from ", startingLR, ")...")
       brtM <- optimizeBRT(spPa, predSel, "occurrence", startingLR)
+      if (is.null(brtM)) {
+        warning("Skipping ", sp, " at habitat scale -- optimizeBRT() gave up (see its own ",
+                "warning above for why). No model saved; this species will simply be ",
+                "absent from habitat-scale results until its data issue is fixed.")
+        next
+      }
       persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_habitat")
       saveRDS(brtM, outModel)
       message("Model saved -> ", outModel)

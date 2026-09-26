@@ -64,6 +64,12 @@ modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
                                        perSpeciesLR = perSpeciesLR, lrStateSuffix = "_EU")
       message("Training BRT (optimising learning rate, starting from ", startingLR, ")...")
       brtM <- optimizeBRT(spPa, predSel, "occurrence", startingLR)
+      if (is.null(brtM)) {
+        warning("Skipping ", sp, " at Europe scale -- optimizeBRT() gave up (see its own ",
+                "warning above for why). No model saved; this species will simply be ",
+                "absent from Europe-scale results until its data issue is fixed.")
+        next
+      }
       persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_EU")
       saveRDS(brtM, outModel)
       message("Model saved -> ", outModel)

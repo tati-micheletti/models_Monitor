@@ -45,6 +45,12 @@ modelGerLandscape <- function(inputsData, predictionYears, landscapeOutputDir, o
                                        perSpeciesLR = perSpeciesLR, lrStateSuffix = "_landscape")
       message("Training BRT (optimising learning rate, starting from ", startingLR, ")...")
       brtM <- optimizeBRT(spPa, predSel, "occurrence", startingLR)
+      if (is.null(brtM)) {
+        warning("Skipping ", sp, " at landscape scale -- optimizeBRT() gave up (see its own ",
+                "warning above for why). No model saved; this species will simply be ",
+                "absent from landscape-scale results until its data issue is fixed.")
+        next
+      }
       persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_landscape")
       saveRDS(brtM, outModel)
       message("Model saved -> ", outModel)
