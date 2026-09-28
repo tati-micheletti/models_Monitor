@@ -44,24 +44,29 @@ defineModule(sim, list(
     defineParameter(".useCache", "logical", FALSE, NA, NA,
                     "Should caching of events or module be used?"),
 
-    ## Climate prediction range (must match dataPrep_Monitor's values) ------------------
-    defineParameter("climateTargetYears", "numeric", 2005:2025, NA, NA,
-                    "Target years to predict the European climate BRT onto (one bioclim",
-                    "rolling-window raster per year). Must match dataPrep_Monitor's",
-                    "climateTargetYears."),
+    ## Prediction years (must match dataPrep_Monitor's predictionYears) -----------------
+    defineParameter("predictionYears", "numeric", NA_real_, NA, NA,
+                    "Years to generate PREDICTION rasters for, across the climate/habitat/",
+                    "landscape BRTs and the meta-model. No default -- must be supplied",
+                    "explicitly (e.g. predictionYears from sharedConfig.R), so a caller can",
+                    "never silently fall back to a stale range. Independent of each scale's",
+                    "own FITTING years (dataPrep_Monitor's landscapeYears/habitatYears --",
+                    "training data is NEVER filtered by this parameter, see",
+                    "DECISIONS.md's 2026-09-28 \"Decouple fitting years from prediction",
+                    "years\" entry). The European/habitat/landscape BRTs' own internal",
+                    "predict loop auto-covers habitatYears on top of this (see",
+                    "resolveScalePredictionYears()) so metaModel() always finds the",
+                    "suitability rasters it needs to train on, regardless of how",
+                    "restricted this is; metaModel()'s own output stays exactly this."),
     defineParameter("climateWindowLength", "numeric", 6, NA, NA,
                     "Rolling window length (years) used to compute the bioclim climatology.",
                     "Must match dataPrep_Monitor's climateWindowLength."),
-
-    ## German prediction/training ranges -------------------------------------------------
-    defineParameter("landscapeYears", "numeric", 2005:2025, NA, NA,
-                    "Years to predict the German habitat and landscape BRTs (and the",
-                    "meta-model) onto. Habitat/meta training data covers only habitatYears;",
-                    "years outside that range are extrapolations/hindcasts. Must match",
-                    "dataPrep_Monitor's/inputs_Monitor's landscapeYears."),
     defineParameter("habitatYears", "numeric", 2022:2025, NA, NA,
-                    "Years with real habitat occurrence data -- the meta-model's training",
-                    "years. Must match dataPrep_Monitor's/inputs_Monitor's habitatYears."),
+                    "Years with real habitat occurrence data -- both habitat's own fitting-",
+                    "year constraint (in dataPrep_Monitor) AND the meta-model's training",
+                    "years here (the same underlying data-availability fact, not two",
+                    "separate parameters -- see DECISIONS.md's 2026-09-28 entry). Must",
+                    "match dataPrep_Monitor's/inputs_Monitor's habitatYears."),
 
     ## Scale resolutions (must match dataPrep_Monitor's/inputs_Monitor's copies) -------
     defineParameter("climateResolutionM", "numeric", 50000, NA, NA,
@@ -149,6 +154,10 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
   switch(
     eventType,
     init = {
+      if (identical(P(sim)$predictionYears, NA_real_)) {
+        stop("models_Monitor's predictionYears parameter must be supplied explicitly ",
+             "(e.g. predictionYears from sharedConfig.R) -- no default.")
+      }
       if (!is.na(P(sim)$runScale)) {
         if (is.na(P(sim)$runSpecies)) {
           stop("runScale is set but runSpecies is NA -- both must be set together ",
@@ -175,10 +184,16 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       inputsData <- sim$inputsData$europe
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
 
+      # Scale-level BRTs' own predict loop auto-covers habitatYears on top
+      # of the user-requested predictionYears, so metaModel() always finds
+      # the suitability rasters it needs to train on (see
+      # resolveScalePredictionYears(); DECISIONS.md's 2026-09-28 entry).
+      scalePredictionYears <- resolveScalePredictionYears(P(sim)$predictionYears, P(sim)$habitatYears)
+
       if (is.null(sim$europeModels) || P(sim)$rerunModelEurope) {
         sim$europeModels <- modelEurope(
           inputsData = inputsData,
-          climateTargetYears = P(sim)$climateTargetYears,
+          climateTargetYears = scalePredictionYears,
           climateWindowLength = P(sim)$climateWindowLength,
           climateOutputDir = file.path(inputPath(sim), "predictors", "processed",
                                         scaleLabel(P(sim)$climateResolutionM)),
@@ -194,8 +209,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                                                      P(sim)$resolutionConfig, P(sim)$habitatResolutionM),
             landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
                                                        P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
-            climateTargetYears = P(sim)$climateTargetYears,
-            landscapeYears = P(sim)$landscapeYears)) {
+            predictionYears = P(sim)$predictionYears,
+            habitatYears = P(sim)$habitatYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
       }
@@ -207,10 +222,12 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       inputsData <- sim$inputsData$gerHabitat
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
 
+      scalePredictionYears <- resolveScalePredictionYears(P(sim)$predictionYears, P(sim)$habitatYears)
+
       if (is.null(sim$habitatModels) || P(sim)$rerunModelGerHabitat) {
         sim$habitatModels <- modelGerHabitat(
           inputsData = inputsData,
-          predictionYears = P(sim)$landscapeYears,
+          predictionYears = scalePredictionYears,
           processedRoot = file.path(inputPath(sim), "predictors", "processed"),
           outputRoot = outputPath(sim),
           resolutionConfig = P(sim)$resolutionConfig,
@@ -226,8 +243,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                                                      P(sim)$resolutionConfig, P(sim)$habitatResolutionM),
             landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
                                                        P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
-            climateTargetYears = P(sim)$climateTargetYears,
-            landscapeYears = P(sim)$landscapeYears)) {
+            predictionYears = P(sim)$predictionYears,
+            habitatYears = P(sim)$habitatYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
       }
@@ -239,10 +256,12 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       inputsData <- sim$inputsData$gerLandscape
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
 
+      scalePredictionYears <- resolveScalePredictionYears(P(sim)$predictionYears, P(sim)$habitatYears)
+
       if (is.null(sim$landscapeModels) || P(sim)$rerunModelGerLandscape) {
         sim$landscapeModels <- modelGerLandscape(
           inputsData = inputsData,
-          predictionYears = P(sim)$landscapeYears,
+          predictionYears = scalePredictionYears,
           processedRoot = file.path(inputPath(sim), "predictors", "processed"),
           outputRoot = outputPath(sim),
           resolutionConfig = P(sim)$resolutionConfig,
@@ -258,8 +277,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                                                      P(sim)$resolutionConfig, P(sim)$habitatResolutionM),
             landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
                                                        P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
-            climateTargetYears = P(sim)$climateTargetYears,
-            landscapeYears = P(sim)$landscapeYears)) {
+            predictionYears = P(sim)$predictionYears,
+            habitatYears = P(sim)$habitatYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
       }
@@ -293,8 +312,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
               climateResolutionM = P(sim)$climateResolutionM,
               habitatResolutionM = habitatResM,
               landscapeResolutionM = landscapeResM,
-              climateTargetYears = P(sim)$climateTargetYears,
-              landscapeYears = P(sim)$landscapeYears)) {
+              predictionYears = P(sim)$predictionYears,
+              habitatYears = P(sim)$habitatYears)) {
           message(P(sim)$runSpecies, ": not all 3 scales ready yet -- skipping metaModel for now.")
           return(invisible(sim))
         }
@@ -323,7 +342,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
         sim$metaModels <- metaModel(
           inputsDataGerHabitat = inputsDataGerHabitat,
           habitatYears = P(sim)$habitatYears,
-          predictionYears = P(sim)$landscapeYears,
+          predictionYears = P(sim)$predictionYears,
           modelDirs = list(europe = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
                             landscape = file.path(outputPath(sim), scaleLabel(landscapeResM)),
                             habitat = file.path(outputPath(sim), scaleLabel(habitatResM))),
