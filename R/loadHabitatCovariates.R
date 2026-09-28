@@ -6,10 +6,12 @@
 #' resamples everything to the land use reference grid, and backfills
 #' the hedges layer for years where it is unavailable.
 #'
-#' NOTE: this expects `landuse_<year>_habitat.tif` and
-#' `landcover_<corineYear>_habitat.tif` to already exist under
+#' NOTE: this expects `landuse_<year>_habitat_<scaleLabel>.tif` and
+#' `landcover_<corineYear>_habitat_<scaleLabel>.tif` to already exist under
 #' `habitatDir` -- produced by dataPrep_Monitor's `prepareLanduse()`/
-#' `prepareLandcover()`.
+#' `prepareLandcover()`. The `<scaleLabel>` suffix (e.g. `scale_02`) is
+#' `basename(habitatDir)` itself -- a second, redundant safety layer
+#' beyond the containing folder name (2026-09-28).
 #'
 #' NOTE: this exact function is deliberately duplicated verbatim in
 #' models_Monitor (same filename) so that module has no load-time
@@ -25,13 +27,18 @@ loadHabitatCovariates <- function(year, habitatDir) {
   corineYr <- corineYear(year)
   message("Loading habitat covariates for ", year, " (CORINE: ", corineYr, ")")
 
-  luFile <- file.path(habitatDir, paste0("landuse_", year, "_habitat.tif"))
-  lcFile <- file.path(habitatDir, paste0("landcover_", corineYr, "_habitat.tif"))
+  # Resolution appended to every filename below (second safety layer beyond
+  # the containing scaleLabel()-named folder, `habitatDir` itself) -- see
+  # aggregateAndSave.R/computeLanduse.R/computeLandcover.R (the writers).
+  resSuffix <- basename(habitatDir)
+
+  luFile <- file.path(habitatDir, paste0("landuse_", year, "_habitat_", resSuffix, ".tif"))
+  lcFile <- file.path(habitatDir, paste0("landcover_", corineYr, "_habitat_", resSuffix, ".tif"))
   # solar_radiation intentionally excluded (see DECISIONS.md, 2026-09-26 --
   # dropped as a predictor for every species, not well-scaled/possibly
   # capturing noise from other unmodeled factors)
-  demFiles <- c(file.path(habitatDir, "elevation_habitat.tif"),
-                file.path(habitatDir, "slope_habitat.tif"))
+  demFiles <- c(file.path(habitatDir, paste0("elevation_habitat_", resSuffix, ".tif")),
+                file.path(habitatDir, paste0("slope_habitat_", resSuffix, ".tif")))
 
   missing <- c(luFile, lcFile, demFiles)[!file.exists(c(luFile, lcFile, demFiles))]
   if (length(missing) > 0) {
@@ -71,7 +78,7 @@ loadHabitatCovariates <- function(year, habitatDir) {
       if (!is.null(refYear)) {
         message("Hedges NA for ", year, " -- backfilling from ", refYear)
         luRefYr <- terra::rast(file.path(habitatDir,
-                                          paste0("landuse_", refYear, "_habitat.tif")))
+                                          paste0("landuse_", refYear, "_habitat_", resSuffix, ".tif")))
         hedgeRef <- luRefYr[["hedges"]]
         hedgeRef <- terra::resample(hedgeRef, covStack[[1]], method = "bilinear")
         names(hedgeRef) <- hedgeCol

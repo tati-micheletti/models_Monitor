@@ -34,9 +34,12 @@ modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
 
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
 
+  # Resolution appended to the filename (second safety layer beyond the
+  # containing scaleLabel()-named folder, climateOutputDir itself).
+  climateResSuffix <- basename(climateOutputDir)
   predictionFiles <- lapply(climateTargetYears, function(yr) {
     startYr <- yr - (climateWindowLength - 1)
-    fname <- paste0("bioclim_", startYr, "-", yr, ".tif")
+    fname <- paste0("bioclim_", startYr, "-", yr, "_", climateResSuffix, ".tif")
     fpath <- file.path(climateOutputDir, fname)
     list(year = yr, path = fpath, exists = file.exists(fpath))
   })

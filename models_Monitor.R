@@ -325,9 +325,12 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
 
         # Static DEM-derived reference grid -- deliberately not any species'
         # habitat prediction, so this never depends on model output ordering.
+        # Resolution appended to the filename (second safety layer beyond
+        # the containing scaleLabel()-named folder).
+        habitatResLabel <- scaleLabel(P(sim)$habitatResolutionM)
         refRaster <- terra::rast(file.path(inputPath(sim), "predictors", "processed",
-                                            scaleLabel(P(sim)$habitatResolutionM),
-                                            "solar_radiation_habitat.tif"))
+                                            habitatResLabel,
+                                            paste0("solar_radiation_habitat_", habitatResLabel, ".tif")))
 
         resolutionsM <- c(europe = P(sim)$climateResolutionM,
                            habitat = P(sim)$habitatResolutionM,

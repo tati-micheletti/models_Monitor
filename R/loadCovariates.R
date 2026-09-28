@@ -4,10 +4,12 @@
 #' static DEM derivatives, resamples everything to the land use reference
 #' grid, and backfills the hedges layer for years where it is unavailable.
 #'
-#' NOTE: this expects `landuse_<year>_landscape.tif` and
-#' `landcover_<corineYear>_landscape.tif` to already exist under
-#' `landscapeDir` -- produced by dataPrep_Monitor's `prepareLanduse()`/
-#' `prepareLandcover()`.
+#' NOTE: this expects `landuse_<year>_landscape_<scaleLabel>.tif` and
+#' `landcover_<corineYear>_landscape_<scaleLabel>.tif` to already exist
+#' under `landscapeDir` -- produced by dataPrep_Monitor's `prepareLanduse()`/
+#' `prepareLandcover()`. The `<scaleLabel>` suffix (e.g. `scale_1`) is
+#' `basename(landscapeDir)` itself -- a second, redundant safety layer
+#' beyond the containing folder name (2026-09-28).
 #'
 #' NOTE: this exact function is deliberately duplicated verbatim in
 #' models_Monitor (same filename) so that module has no load-time
@@ -25,8 +27,13 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
   corineYr <- corineYear(year)
   message("Loading covariates for ", year, " (CORINE: ", corineYr, ")")
 
+  # Resolution appended to every filename below (second safety layer beyond
+  # the containing scaleLabel()-named folder, `landscapeDir` itself) -- see
+  # aggregateAndSave.R/computeLanduse.R/computeLandcover.R (the writers).
+  resSuffix <- basename(landscapeDir)
+
   # Land use (year-specific, 14 categories)
-  luFile <- file.path(landscapeDir, paste0("landuse_", year, "_landscape.tif"))
+  luFile <- file.path(landscapeDir, paste0("landuse_", year, "_landscape_", resSuffix, ".tif"))
   if (!file.exists(luFile)) {
     warning("Land use file missing for ", year, ": ", luFile)
     return(NULL)
@@ -34,7 +41,7 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
   lu <- terra::rast(luFile)
 
   # Land cover (CORINE snapshot, 3 categories)
-  lcFile <- file.path(landscapeDir, paste0("landcover_", corineYr, "_landscape.tif"))
+  lcFile <- file.path(landscapeDir, paste0("landcover_", corineYr, "_landscape_", resSuffix, ".tif"))
   if (!file.exists(lcFile)) {
     warning("Land cover file missing for CORINE ", corineYr, ": ", lcFile)
     return(NULL)
@@ -45,8 +52,8 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
   # solar_radiation intentionally excluded (see DECISIONS.md, 2026-09-26 --
   # dropped as a predictor for every species, not well-scaled/possibly
   # capturing noise from other unmodeled factors)
-  elev <- terra::rast(file.path(landscapeDir, "elevation_landscape.tif"))
-  slope <- terra::rast(file.path(landscapeDir, "slope_landscape.tif"))
+  elev <- terra::rast(file.path(landscapeDir, paste0("elevation_landscape_", resSuffix, ".tif")))
+  slope <- terra::rast(file.path(landscapeDir, paste0("slope_landscape_", resSuffix, ".tif")))
 
   names(lu) <- paste0(names(lu), "_", year)
   names(lc) <- paste0(names(lc), "_", corineYr)
@@ -82,7 +89,7 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
         message("Hedges NA for ", year, " -- backfilling from ", refYear)
 
         luRefYr <- terra::rast(file.path(landscapeDir,
-                                          paste0("landuse_", refYear, "_landscape.tif")))
+                                          paste0("landuse_", refYear, "_landscape_", resSuffix, ".tif")))
         hedgeRef <- luRefYr[["hedges"]]
         hedgeRef <- terra::resample(hedgeRef, lu[[1]], method = "bilinear")
         names(hedgeRef) <- hedgeCol
