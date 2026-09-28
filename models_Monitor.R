@@ -22,6 +22,7 @@ defineModule(sim, list(
   citation = list("citation.bib"),
   documentation = list("NEWS.md", "README.md", "models_Monitor.Rmd"),
   reqdPkgs = list("PredictiveEcology/SpaDES.core@development (>= 3.2.0)",
+                   "PredictiveEcology/reproducible@development",
                    "terra", "dismo", "gbm", "glmnet", "PresenceAbsence", "geodata"),
   parameters = bindrows(
     defineParameter(".plots", "character", "screen", NA, NA,
@@ -196,7 +197,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                                         scaleLabel(P(sim)$climateResolutionM)),
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
           initialLR = P(sim)$europeInitialLR,
-          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "climate"))
+          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "climate"),
+          cachePath = cachePath(sim))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
@@ -228,7 +230,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                                         scaleLabel(P(sim)$habitatResolutionM)),
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM)),
           initialLR = P(sim)$habitatInitialLR,
-          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "habitat"))
+          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "habitat"),
+          cachePath = cachePath(sim))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
@@ -264,7 +267,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                                           scaleLabel(landscapeResM)),
           outputDir = file.path(outputPath(sim), scaleLabel(landscapeResM)),
           initialLR = P(sim)$landscapeInitialLR,
-          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "landscape"))
+          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "landscape"),
+          cachePath = cachePath(sim))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
