@@ -17,13 +17,23 @@
 #'   previously-persisted converged LR (see `resolveStartingLR()`).
 #' @param perSpeciesLR Named numeric vector/list, or NULL (default). Per-species
 #'   starting-LR overrides, keyed by species Latin name.
+#' @param cachePath Character, or NULL (default). Directory for
+#'   `reproducible::Cache()`'s per-species(-year) cache -- e.g.
+#'   `cachePath(sim)`, a stable location shared across runs (NOT the
+#'   per-run timestamped output folder). NULL falls back to a temp
+#'   directory, for standalone/test calls.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `predictions`
 #'   (named by year), and `perf` (the evalSDM() row).
 modelGerHabitat <- function(inputsData, predictionYears, habitatOutputDir, outputDir,
-                             initialLR = 0.08, perSpeciesLR = NULL) {
+                             initialLR = 0.08, perSpeciesLR = NULL, cachePath = NULL) {
 
+  if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
   result <- list()
+
+  covStacksByYear <- stats::setNames(
+    lapply(predictionYears, function(yr) loadHabitatCovariates(yr, habitatOutputDir)),
+    as.character(predictionYears))
 
   for (sp in names(inputsData)) {
     spClean <- gsub(" ", "_", sp)
@@ -39,45 +49,34 @@ modelGerHabitat <- function(inputsData, predictionYears, habitatOutputDir, outpu
             sum(spPa$occurrence == 0), " abs)")
     message("Predictors (", length(predSel), "): ", paste(predSel, collapse = ", "))
 
-    if (isValidCachedRDS(outModel)) {
-      message("Loading cached BRT model...")
-      brtM <- readRDS(outModel)
-    } else {
-      startingLR <- resolveStartingLR(sp, spClean, defaultLR = initialLR, lrStateDir = outputDir,
-                                       perSpeciesLR = perSpeciesLR, lrStateSuffix = "_habitat")
-      message("Training BRT (optimising learning rate, starting from ", startingLR, ")...")
-      brtM <- optimizeBRT(spPa, predSel, "occurrence", startingLR)
-      if (is.null(brtM)) {
-        warning("Skipping ", sp, " at habitat scale -- optimizeBRT() gave up (see its own ",
-                "warning above for why). No model saved; this species will simply be ",
-                "absent from habitat-scale results until its data issue is fixed.")
-        next
-      }
-      persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_habitat")
-      saveRDS(brtM, outModel)
-      message("Model saved -> ", outModel)
+    startingLR <- resolveStartingLR(sp, spClean, defaultLR = initialLR, lrStateDir = outputDir,
+                                     perSpeciesLR = perSpeciesLR, lrStateSuffix = "_habitat")
+    brtM <- reproducible::Cache(
+      fitBRTOneSpecies, sp = sp, spPa = spPa, predSel = predSel, startingLR = startingLR,
+      cachePath = cachePath, userTags = c("modelGerHabitat", "fit", spClean))
+
+    if (is.null(brtM)) {
+      warning("Skipping ", sp, " at habitat scale -- optimizeBRT() gave up (see its own ",
+              "warning above for why). No model saved; this species will simply be ",
+              "absent from habitat-scale results until its data issue is fixed.")
+      next
     }
+    persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_habitat")
+    saveRDS(brtM, outModel)
+    message("Model saved -> ", outModel)
 
-    if (isValidCachedRDS(outPerf)) {
-      message("Loading cached performance...")
-      brtPerf <- readRDS(outPerf)
-    } else {
-      message("Running block cross-validation...")
-      cvPred <- blockCVPredictBRT(spPa, predSel, "occurrence", spPa$foldID, brtM)
-      brtPerf <- evalSDM(spPa$occurrence, cvPred)
-      saveRDS(brtPerf, outPerf)
+    evalResult <- reproducible::Cache(
+      evalBRTOneSpecies, sp = sp, spPa = spPa, predSel = predSel, brtM = brtM,
+      cachePath = cachePath, userTags = c("modelGerHabitat", "eval", spClean))
+    brtPerf <- evalResult$perf
+    saveRDS(brtPerf, outPerf)
 
-      message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),
-              " | D2 = ", round(brtPerf$D2, 3))
-      if (brtPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
-
-      predOcc <- gbm::predict.gbm(brtM, spPa[, predSel], n.trees = brtM$gbm.call$best.trees,
-                                   type = "response")
-      exclDev <- explDeviance(spPa$occurrence, predOcc)
-      message("D2 at occurrence locations: ", round(exclDev, 3))
-      saveRDS(data.frame(species = sp, D2 = exclDev),
-              file.path(outputDir, paste0(spClean, "_expl_dev_habitat.rds")))
-    }
+    message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),
+            " | D2 = ", round(brtPerf$D2, 3))
+    if (brtPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
+    message("D2 at occurrence locations: ", round(evalResult$explDev, 3))
+    saveRDS(data.frame(species = sp, D2 = evalResult$explDev),
+            file.path(outputDir, paste0(spClean, "_expl_dev_habitat.rds")))
 
     message("Predicting onto German habitat grid for ", length(predictionYears), " years...")
     spPredFiles <- list()
@@ -85,13 +84,7 @@ modelGerHabitat <- function(inputsData, predictionYears, habitatOutputDir, outpu
     for (yr in predictionYears) {
       outTif <- file.path(outputDir, paste0(spClean, "_pred_habitat_", yr, ".tif"))
 
-      if (isValidPredictionRaster(outTif)) {
-        message("Year ", yr, ": cache hit")
-        spPredFiles[[as.character(yr)]] <- outTif
-        next
-      }
-
-      covStack <- loadHabitatCovariates(yr, habitatOutputDir)
+      covStack <- covStacksByYear[[as.character(yr)]]
       if (is.null(covStack)) {
         warning("Year ", yr, ": covariates unavailable -- skipping")
         next
@@ -106,7 +99,11 @@ modelGerHabitat <- function(inputsData, predictionYears, habitatOutputDir, outpu
         next
       }
 
-      predictBRTToRaster(covStack, predSel, brtM, brtPerf$thresh, outTif)
+      predRaster <- reproducible::Cache(
+        predictBRTToRaster, covStack = covStack, predictors = predSel, brtModel = brtM,
+        thresh = brtPerf$thresh, cachePath = cachePath,
+        userTags = c("modelGerHabitat", "predict", spClean, as.character(yr)))
+      terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", yr, ": saved -> ", basename(outTif))
       spPredFiles[[as.character(yr)]] <- outTif
     }
