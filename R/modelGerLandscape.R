@@ -5,11 +5,24 @@
 #' block-cross-validates using that table's own `foldID` column, then
 #' predicts onto `predictionYears` (the full German modeling period).
 #'
+#' Each species' own landscape resolution is resolved from `resolutionConfig`
+#' (falling back to `sharedResolutionM` when unset), so covariates and
+#' outputs are read/written to that species' own `scale_X` folder -- species
+#' sharing a resolution also share one cached covariate stack per year (e.g.
+#' Milvus milvus at a coarser 15km landscape window than the shared 1km
+#' default -- see DECISIONS.md's 2026-09-28 entry).
+#'
 #' @param inputsData Named list (by species) with `data`/`predictors`, from
 #'   `sim$inputsData$gerLandscape` (inputs_Monitor).
 #' @param predictionYears Integer vector of years to predict onto.
-#' @param landscapeOutputDir Character. Directory of landscape-scale covariate rasters.
-#' @param outputDir Character. Directory to save model/performance/prediction outputs in.
+#' @param processedRoot Character. `predictors/processed` directory (without
+#'   the scale_X leaf -- each species' own leaf is appended internally).
+#' @param outputRoot Character. Directory to save model/performance/
+#'   prediction outputs in (without the scale_X leaf).
+#' @param resolutionConfig Named list, species -> scale -> resolution (m), or
+#'   NULL. See `models_Monitor`'s parameter of the same name.
+#' @param sharedResolutionM Numeric. Shared default landscape resolution (m),
+#'   used for any species absent from `resolutionConfig`.
 #' @param initialLR Numeric. Default starting learning rate for `optimizeBRT()`,
 #'   used when a species has neither a `perSpeciesLR` override nor a
 #'   previously-persisted converged LR (see `resolveStartingLR()`).
@@ -22,24 +35,34 @@
 #'   directory, for standalone/test calls.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `predictions`
 #'   (named by year), and `perf` (the evalSDM() row).
-modelGerLandscape <- function(inputsData, predictionYears, landscapeOutputDir, outputDir,
+modelGerLandscape <- function(inputsData, predictionYears, processedRoot, outputRoot,
+                               resolutionConfig = NULL, sharedResolutionM,
                                initialLR = 0.08, perSpeciesLR = NULL, cachePath = NULL) {
 
   if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
-  dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
   result <- list()
-
-  covStacksByYear <- stats::setNames(
-    lapply(predictionYears, function(yr) {
-      covStack <- loadCovariates(yr, landscapeOutputDir, NULL)
-      if (!is.null(covStack)) names(covStack) <- gsub("_\\d{4}$", "", names(covStack))
-      covStack
-    }),
-    as.character(predictionYears))
+  covStacksByResolution <- list()
 
   for (sp in names(inputsData)) {
     spClean <- gsub(" ", "_", sp)
     message("\n  == ", sp, " ==============================")
+
+    resM <- resolveResolutionM(sp, "landscape", resolutionConfig, sharedResolutionM)
+    landscapeOutputDir <- file.path(processedRoot, scaleLabel(resM))
+    outputDir <- file.path(outputRoot, scaleLabel(resM))
+    dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
+
+    resKey <- as.character(resM)
+    if (is.null(covStacksByResolution[[resKey]])) {
+      covStacksByResolution[[resKey]] <- stats::setNames(
+        lapply(predictionYears, function(yr) {
+          covStack <- loadCovariates(yr, landscapeOutputDir, NULL)
+          if (!is.null(covStack)) names(covStack) <- gsub("_\\d{4}$", "", names(covStack))
+          covStack
+        }),
+        as.character(predictionYears))
+    }
+    covStacksByYear <- covStacksByResolution[[resKey]]
 
     spPa <- inputsData[[sp]]$data
     predSel <- inputsData[[sp]]$predictors

@@ -76,16 +76,16 @@ defineModule(sim, list(
                     "Resolution (m) of the landscape scale -- used, via scaleLabel(), to",
                     "locate that scale's processed covariates and name its inputs/outputs",
                     "subfolders. Must match dataPrep_Monitor's landscapeResolutionM."),
-    defineParameter("landscapeResolutionOverrides", "list", list(), NA, NA,
-                    "Named list, species -> resolution (m), e.g.",
-                    "list(\"Milvus milvus\" = 10000). Only takes effect for that species'",
-                    "single-species cluster task (runSpecies set) -- the batched full run",
-                    "still uses one shared landscapeResolutionM for every species (per-",
-                    "species resolution in a batched multi-species fit isn't supported;",
-                    "see resolveSpeciesResolution()). Requires the override resolution's",
-                    "covariates to already exist (dataPrep_Monitor doesn't yet generate",
-                    "more than one landscape resolution per run -- see improvements.md",
-                    "item 4)."),
+    defineParameter("resolutionConfig", "list", NULL, NA, NA,
+                    "NULL (default): every species uses the shared *ResolutionM parameters",
+                    "above. Otherwise a named list, species -> scale -> resolution (m),",
+                    "produced by extractResolutionConfig() (sharedSpeciesConfig.R, repo",
+                    "root) from speciesConfig_general.csv's resolution_m column -- e.g. a",
+                    "species with a coarser habitat range than the shared default (Milvus",
+                    "milvus at a 15km landscape window instead of the shared 1km -- see",
+                    "DECISIONS.md's 2026-09-28 entry). Resolved once by the orchestrating",
+                    "script and passed in as a plain value, same pattern as sharedConfig.R's",
+                    "other shared values. See resolveResolutionM()."),
 
     ## BRT learning-rate search starting points (per Wiedenroth et al. tuning notes) -----
     defineParameter("europeInitialLR", "numeric", 0.01, NA, NA,
@@ -94,16 +94,6 @@ defineModule(sim, list(
                     "Starting learning rate for the German habitat BRT's optimizeBRT() search."),
     defineParameter("landscapeInitialLR", "numeric", 0.08, NA, NA,
                     "Starting learning rate for the German landscape BRT's optimizeBRT() search."),
-    defineParameter("perSpeciesGeneralConfig", "list", NULL, NA, NA,
-                    "NULL (default): every species uses the shared *InitialLR parameters above.",
-                    "Otherwise the nested list species -> scale -> settings produced by",
-                    "loadSpeciesGeneralConfig() (sharedSpeciesConfig.R, repo root) from",
-                    "speciesConfig_general.csv -- only its brt_start_lr field is consumed here,",
-                    "as a per-species starting-LR override (see resolveStartingLR() in",
-                    "brtLearningRateState.R). resolution_m/thinning_dist_m in that same file are",
-                    "for dataPrep_Monitor instead; hedges_treatment for inputs_Monitor. Resolved",
-                    "once by the orchestrating script and passed in as a plain value, same",
-                    "pattern as sharedConfig.R's other shared values."),
 
     ## Cluster-task restriction -- leave both NA for the normal full run; every
     ## default codepath is unchanged when they're NA. See tools/runClusterTask.R. -
@@ -185,9 +175,6 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       inputsData <- sim$inputsData$europe
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
 
-      landscapeResM <- resolveSpeciesResolution(P(sim)$runSpecies, P(sim)$landscapeResolutionM,
-                                                 P(sim)$landscapeResolutionOverrides)
-
       if (is.null(sim$europeModels) || P(sim)$rerunModelEurope) {
         sim$europeModels <- modelEurope(
           inputsData = inputsData,
@@ -197,15 +184,16 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                                         scaleLabel(P(sim)$climateResolutionM)),
           outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
           initialLR = P(sim)$europeInitialLR,
-          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "climate"),
           cachePath = cachePath(sim))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
             species = P(sim)$runSpecies, outputRoot = outputPath(sim),
             climateResolutionM = P(sim)$climateResolutionM,
-            habitatResolutionM = P(sim)$habitatResolutionM,
-            landscapeResolutionM = landscapeResM,
+            habitatResolutionM = resolveResolutionM(P(sim)$runSpecies, "habitat",
+                                                     P(sim)$resolutionConfig, P(sim)$habitatResolutionM),
+            landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
+                                                       P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
             climateTargetYears = P(sim)$climateTargetYears,
             landscapeYears = P(sim)$landscapeYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
@@ -219,26 +207,25 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       inputsData <- sim$inputsData$gerHabitat
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
 
-      landscapeResM <- resolveSpeciesResolution(P(sim)$runSpecies, P(sim)$landscapeResolutionM,
-                                                 P(sim)$landscapeResolutionOverrides)
-
       if (is.null(sim$habitatModels) || P(sim)$rerunModelGerHabitat) {
         sim$habitatModels <- modelGerHabitat(
           inputsData = inputsData,
           predictionYears = P(sim)$landscapeYears,
-          habitatOutputDir = file.path(inputPath(sim), "predictors", "processed",
-                                        scaleLabel(P(sim)$habitatResolutionM)),
-          outputDir = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM)),
+          processedRoot = file.path(inputPath(sim), "predictors", "processed"),
+          outputRoot = outputPath(sim),
+          resolutionConfig = P(sim)$resolutionConfig,
+          sharedResolutionM = P(sim)$habitatResolutionM,
           initialLR = P(sim)$habitatInitialLR,
-          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "habitat"),
           cachePath = cachePath(sim))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
             species = P(sim)$runSpecies, outputRoot = outputPath(sim),
             climateResolutionM = P(sim)$climateResolutionM,
-            habitatResolutionM = P(sim)$habitatResolutionM,
-            landscapeResolutionM = landscapeResM,
+            habitatResolutionM = resolveResolutionM(P(sim)$runSpecies, "habitat",
+                                                     P(sim)$resolutionConfig, P(sim)$habitatResolutionM),
+            landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
+                                                       P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
             climateTargetYears = P(sim)$climateTargetYears,
             landscapeYears = P(sim)$landscapeYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
@@ -252,30 +239,25 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       inputsData <- sim$inputsData$gerLandscape
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
 
-      landscapeResM <- resolveSpeciesResolution(P(sim)$runSpecies, P(sim)$landscapeResolutionM,
-                                                 P(sim)$landscapeResolutionOverrides)
-      if (landscapeResM != P(sim)$landscapeResolutionM) {
-        message(P(sim)$runSpecies, ": using overridden landscape resolution ",
-                landscapeResM, "m (default is ", P(sim)$landscapeResolutionM, "m).")
-      }
-
       if (is.null(sim$landscapeModels) || P(sim)$rerunModelGerLandscape) {
         sim$landscapeModels <- modelGerLandscape(
           inputsData = inputsData,
           predictionYears = P(sim)$landscapeYears,
-          landscapeOutputDir = file.path(inputPath(sim), "predictors", "processed",
-                                          scaleLabel(landscapeResM)),
-          outputDir = file.path(outputPath(sim), scaleLabel(landscapeResM)),
+          processedRoot = file.path(inputPath(sim), "predictors", "processed"),
+          outputRoot = outputPath(sim),
+          resolutionConfig = P(sim)$resolutionConfig,
+          sharedResolutionM = P(sim)$landscapeResolutionM,
           initialLR = P(sim)$landscapeInitialLR,
-          perSpeciesLR = extractScaleStartingLR(P(sim)$perSpeciesGeneralConfig, "landscape"),
           cachePath = cachePath(sim))
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
             species = P(sim)$runSpecies, outputRoot = outputPath(sim),
             climateResolutionM = P(sim)$climateResolutionM,
-            habitatResolutionM = P(sim)$habitatResolutionM,
-            landscapeResolutionM = landscapeResM,
+            habitatResolutionM = resolveResolutionM(P(sim)$runSpecies, "habitat",
+                                                     P(sim)$resolutionConfig, P(sim)$habitatResolutionM),
+            landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
+                                                       P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
             climateTargetYears = P(sim)$climateTargetYears,
             landscapeYears = P(sim)$landscapeYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
@@ -288,15 +270,17 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       # ! ----- EDIT BELOW ----- ! #
       clusterMode <- !is.na(P(sim)$runScale)
 
-      # Which landscape resolution THIS species' own fitted model actually
-      # lives under (may be overridden -- see landscapeResolutionOverrides).
-      # The metamodel OUTPUT folder name below deliberately does NOT use
-      # this -- it stays keyed to the shared default resolutions, so every
-      # species' meta output lands in the same folder regardless of any
-      # individual species' scale override (downstream reporting reads one
-      # shared metaDir for all species).
-      landscapeResM <- resolveSpeciesResolution(P(sim)$runSpecies, P(sim)$landscapeResolutionM,
-                                                 P(sim)$landscapeResolutionOverrides)
+      # Which habitat/landscape resolution THIS species' own fitted models
+      # actually live under (may be overridden -- see resolutionConfig). The
+      # metamodel OUTPUT folder name below deliberately does NOT use these --
+      # it stays keyed to the shared default resolutions, so every species'
+      # meta output lands in the same folder regardless of any individual
+      # species' scale override (downstream reporting reads one shared
+      # metaDir for all species).
+      landscapeResM <- resolveResolutionM(P(sim)$runSpecies, "landscape",
+                                           P(sim)$resolutionConfig, P(sim)$landscapeResolutionM)
+      habitatResM <- resolveResolutionM(P(sim)$runSpecies, "habitat",
+                                         P(sim)$resolutionConfig, P(sim)$habitatResolutionM)
 
       if (clusterMode) {
         # Reached either self-triggered (the scale event that just finished
@@ -307,7 +291,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
         if (!checkAllScalesReady(
               species = P(sim)$runSpecies, outputRoot = outputPath(sim),
               climateResolutionM = P(sim)$climateResolutionM,
-              habitatResolutionM = P(sim)$habitatResolutionM,
+              habitatResolutionM = habitatResM,
               landscapeResolutionM = landscapeResM,
               climateTargetYears = P(sim)$climateTargetYears,
               landscapeYears = P(sim)$landscapeYears)) {
@@ -342,7 +326,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           predictionYears = P(sim)$landscapeYears,
           modelDirs = list(europe = file.path(outputPath(sim), scaleLabel(P(sim)$climateResolutionM)),
                             landscape = file.path(outputPath(sim), scaleLabel(landscapeResM)),
-                            habitat = file.path(outputPath(sim), scaleLabel(P(sim)$habitatResolutionM))),
+                            habitat = file.path(outputPath(sim), scaleLabel(habitatResM))),
           refRaster = refRaster,
           outputDir = file.path(outputPath(sim), metamodelLabel(resolutionsM)),
           nBootTrend = P(sim)$nBootTrend,
