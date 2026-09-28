@@ -19,10 +19,18 @@
 #'   previously-persisted converged LR (see `resolveStartingLR()`).
 #' @param perSpeciesLR Named numeric vector/list, or NULL (default). Per-species
 #'   starting-LR overrides, keyed by species Latin name.
+#' @param cachePath Character, or NULL (default). Directory for
+#'   `reproducible::Cache()`'s per-species(-year) cache -- e.g.
+#'   `cachePath(sim)`, a stable location shared across runs (NOT the
+#'   per-run timestamped output folder). NULL falls back to a temp
+#'   directory, for standalone/test calls.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `predictions`
 #'   (named by year), and `perf` (the evalSDM() row).
 modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
-                         climateOutputDir, outputDir, initialLR = 0.01, perSpeciesLR = NULL) {
+                         climateOutputDir, outputDir, initialLR = 0.01, perSpeciesLR = NULL,
+                         cachePath = NULL) {
+
+  if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
 
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
 
@@ -56,45 +64,34 @@ modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
             sum(spPa$occurrence == 0), " abs)")
     message("Predictors (", length(predSel), "): ", paste(predSel, collapse = ", "))
 
-    if (isValidCachedRDS(outModel)) {
-      message("Loading cached BRT model...")
-      brtM <- readRDS(outModel)
-    } else {
-      startingLR <- resolveStartingLR(sp, spClean, defaultLR = initialLR, lrStateDir = outputDir,
-                                       perSpeciesLR = perSpeciesLR, lrStateSuffix = "_EU")
-      message("Training BRT (optimising learning rate, starting from ", startingLR, ")...")
-      brtM <- optimizeBRT(spPa, predSel, "occurrence", startingLR)
-      if (is.null(brtM)) {
-        warning("Skipping ", sp, " at Europe scale -- optimizeBRT() gave up (see its own ",
-                "warning above for why). No model saved; this species will simply be ",
-                "absent from Europe-scale results until its data issue is fixed.")
-        next
-      }
-      persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_EU")
-      saveRDS(brtM, outModel)
-      message("Model saved -> ", outModel)
+    startingLR <- resolveStartingLR(sp, spClean, defaultLR = initialLR, lrStateDir = outputDir,
+                                     perSpeciesLR = perSpeciesLR, lrStateSuffix = "_EU")
+    brtM <- reproducible::Cache(
+      fitBRTOneSpecies, sp = sp, spPa = spPa, predSel = predSel, startingLR = startingLR,
+      cachePath = cachePath, userTags = c("modelEurope", "fit", spClean))
+
+    if (is.null(brtM)) {
+      warning("Skipping ", sp, " at Europe scale -- optimizeBRT() gave up (see its own ",
+              "warning above for why). No model saved; this species will simply be ",
+              "absent from Europe-scale results until its data issue is fixed.")
+      next
     }
+    persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_EU")
+    saveRDS(brtM, outModel)
+    message("Model saved -> ", outModel)
 
-    if (isValidCachedRDS(outPerf)) {
-      message("Loading cached performance metrics...")
-      brtPerf <- readRDS(outPerf)
-    } else {
-      message("Running block cross-validation...")
-      cvPred <- blockCVPredictBRT(spPa, predSel, "occurrence", spPa$foldID, brtM)
-      brtPerf <- evalSDM(spPa$occurrence, cvPred)
-      saveRDS(brtPerf, outPerf)
+    evalResult <- reproducible::Cache(
+      evalBRTOneSpecies, sp = sp, spPa = spPa, predSel = predSel, brtM = brtM,
+      cachePath = cachePath, userTags = c("modelEurope", "eval", spClean))
+    brtPerf <- evalResult$perf
+    saveRDS(brtPerf, outPerf)
 
-      message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),
-              " | D2 = ", round(brtPerf$D2, 3))
-      if (brtPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
-
-      predOcc <- gbm::predict.gbm(brtM, spPa[, predSel], n.trees = brtM$gbm.call$best.trees,
-                                   type = "response")
-      exclDev <- explDeviance(spPa$occurrence, predOcc)
-      message("D2 at occurrence locations: ", round(exclDev, 3))
-      saveRDS(data.frame(species = sp, D2 = exclDev),
-              file.path(outputDir, paste0(spClean, "_expl_dev_EU.rds")))
-    }
+    message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),
+            " | D2 = ", round(brtPerf$D2, 3))
+    if (brtPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
+    message("D2 at occurrence locations: ", round(evalResult$explDev, 3))
+    saveRDS(data.frame(species = sp, D2 = evalResult$explDev),
+            file.path(outputDir, paste0(spClean, "_expl_dev_EU.rds")))
 
     message("Predicting onto ", length(predictionFiles), " climatologies...")
     spPredFiles <- list()
@@ -107,14 +104,12 @@ modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
 
       outTif <- file.path(outputDir, paste0(spClean, "_pred_EU_", pf$year, ".tif"))
 
-      if (isValidPredictionRaster(outTif)) {
-        message("Year ", pf$year, ": cache hit")
-        spPredFiles[[as.character(pf$year)]] <- outTif
-        next
-      }
-
       bioclimYr <- terra::rast(pf$path)
-      predictBRTToRaster(bioclimYr, predSel, brtM, brtPerf$thresh, outTif)
+      predRaster <- reproducible::Cache(
+        predictBRTToRaster, covStack = bioclimYr, predictors = predSel, brtModel = brtM,
+        thresh = brtPerf$thresh, cachePath = cachePath,
+        userTags = c("modelEurope", "predict", spClean, as.character(pf$year)))
+      terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", pf$year, ": saved -> ", basename(outTif))
       spPredFiles[[as.character(pf$year)]] <- outTif
     }
