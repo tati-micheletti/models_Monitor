@@ -3,7 +3,7 @@
 #' Builds a prediction data.frame from `covStack`, predicts with
 #' `brtModel`, and rebuilds a full-extent raster (NA where covariates
 #' were incomplete) with `mean_prob` and a `binary` layer thresholded at
-#' `thresh`. Writes via `writeTwoLayerRaster()` to work around a terra
+#' `thresh`. Combined via `combineTwoLayerRaster()` to work around a terra
 #' stacking bug.
 #'
 #' Reconstructs onto `covStack`'s own grid by directly assigning into a
@@ -13,6 +13,12 @@
 #' matters downstream since the meta-model resamples every scale's
 #' prediction onto a shared reference grid.
 #'
+#' Returns the raster rather than writing it to a fixed path (unlike its
+#' pre-2026-09-28 version) so it can be wrapped in `reproducible::Cache()`
+#' -- see `modelGerLandscape()`/`GerHabitat()`/`modelEurope()`, which each
+#' call this then write the (possibly-cached) result to that run's own
+#' known output path.
+#'
 #' @param covStack SpatRaster stack containing at least the non-coordinate
 #'   columns in `predictors` -- `x`/`y` (if present in `predictors`) are
 #'   never expected as actual layers; they're derived from `covStack`'s own
@@ -20,9 +26,8 @@
 #' @param predictors Character vector of predictor column names.
 #' @param brtModel A fitted `gbm.step()` model.
 #' @param thresh Numeric. Binary classification threshold.
-#' @param outPath Character. Output file path.
-#' @return Invisibly, `outPath`.
-predictBRTToRaster <- function(covStack, predictors, brtModel, thresh, outPath) {
+#' @return SpatRaster, two layers (`mean_prob`, `binary`).
+predictBRTToRaster <- function(covStack, predictors, brtModel, thresh) {
   rasterPredictors <- setdiff(predictors, c("x", "y"))
   predRast <- covStack[[rasterPredictors]]
   # xy = TRUE supplies "x"/"y" columns (this raster's own cell coordinates,
@@ -47,5 +52,5 @@ predictBRTToRaster <- function(covStack, predictors, brtModel, thresh, outPath) 
   rBinary <- rPred >= thresh
   names(rBinary) <- "binary"
 
-  writeTwoLayerRaster(rPred, rBinary, c("mean_prob", "binary"), outPath)
+  combineTwoLayerRaster(rPred, rBinary, c("mean_prob", "binary"))
 }
