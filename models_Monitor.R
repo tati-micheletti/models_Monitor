@@ -92,6 +92,17 @@ defineModule(sim, list(
                     "script and passed in as a plain value, same pattern as sharedConfig.R's",
                     "other shared values. See resolveResolutionM()."),
 
+    defineParameter("scalesToRun", "list", NULL, NA, NA,
+                    "NULL (default): every species runs all 4 stages (climate/habitat/",
+                    "landscape/meta), exactly today's behavior. Otherwise a named list,",
+                    "species -> character vector naming a subset of \"climate\"/\"habitat\"/",
+                    "\"landscape\"/\"meta\" -- e.g. list(\"Emberiza citrinella\" =",
+                    "c(\"habitat\", \"landscape\")) to compare covariate variants without",
+                    "the climate niche or the final meta-model step. A testing/debugging",
+                    "control, not a persistent species fact -- unlike resolutionConfig, it",
+                    "has no CSV-backed source and doesn't need setting in runMe.R for a",
+                    "normal full run. See resolveScalesToRun()."),
+
     ## BRT learning-rate search starting points (per Wiedenroth et al. tuning notes) -----
     defineParameter("europeInitialLR", "numeric", 0.01, NA, NA,
                     "Starting learning rate for the European climate BRT's optimizeBRT() search."),
@@ -183,6 +194,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       # ! ----- EDIT BELOW ----- ! #
       inputsData <- sim$inputsData$europe
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
+      inputsData <- inputsData[vapply(names(inputsData), function(sp)
+        "climate" %in% resolveScalesToRun(sp, P(sim)$scalesToRun), logical(1))]
 
       # Scale-level BRTs' own predict loop auto-covers habitatYears on top
       # of the user-requested predictionYears, so metaModel() always finds
@@ -221,6 +234,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       # ! ----- EDIT BELOW ----- ! #
       inputsData <- sim$inputsData$gerHabitat
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
+      inputsData <- inputsData[vapply(names(inputsData), function(sp)
+        "habitat" %in% resolveScalesToRun(sp, P(sim)$scalesToRun), logical(1))]
 
       scalePredictionYears <- resolveScalePredictionYears(P(sim)$predictionYears, P(sim)$habitatYears)
 
@@ -255,6 +270,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       # ! ----- EDIT BELOW ----- ! #
       inputsData <- sim$inputsData$gerLandscape
       if (!is.na(P(sim)$runSpecies)) inputsData <- inputsData[P(sim)$runSpecies]
+      inputsData <- inputsData[vapply(names(inputsData), function(sp)
+        "landscape" %in% resolveScalesToRun(sp, P(sim)$scalesToRun), logical(1))]
 
       scalePredictionYears <- resolveScalePredictionYears(P(sim)$predictionYears, P(sim)$habitatYears)
 
@@ -325,6 +342,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       if (is.null(sim$metaModels) || P(sim)$rerunMetaModel) {
         inputsDataGerHabitat <- sim$inputsData$gerHabitat
         if (!is.na(P(sim)$runSpecies)) inputsDataGerHabitat <- inputsDataGerHabitat[P(sim)$runSpecies]
+        inputsDataGerHabitat <- inputsDataGerHabitat[vapply(names(inputsDataGerHabitat), function(sp)
+          "meta" %in% resolveScalesToRun(sp, P(sim)$scalesToRun), logical(1))]
 
         # Static DEM-derived reference grid -- deliberately not any species'
         # habitat prediction, so this never depends on model output ordering.

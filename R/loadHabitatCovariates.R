@@ -58,7 +58,27 @@ loadHabitatCovariates <- function(year, habitatDir) {
   elev <- terra::resample(elev, luRef, method = "bilinear")
   slope <- terra::resample(slope, luRef, method = "bilinear")
 
-  covStack <- c(lu, lc, elev, slope)
+  # dist_to_woodland/landscape_heterogeneity (2026-09-29, hedges-backfill
+  # alternatives) -- optional: older output folders won't have these yet,
+  # so a missing file just means that candidate predictor isn't offered
+  # this run rather than failing the whole covariate stack.
+  extraLayers <- list()
+  distFile <- file.path(habitatDir, paste0("dist_to_woodland_", corineYr, "_habitat_", resSuffix, ".tif"))
+  if (file.exists(distFile)) {
+    dist <- terra::resample(terra::rast(distFile), luRef, method = "bilinear")
+    terra::values(dist) <- terra::values(dist)
+    extraLayers$dist_to_woodland <- dist
+  }
+  heteroFile <- file.path(habitatDir, paste0("landscape_heterogeneity_", year, "_habitat_", resSuffix, ".tif"))
+  if (file.exists(heteroFile)) {
+    extraLayers$landscape_heterogeneity <- terra::rast(heteroFile)
+  }
+
+  # combineLayersSafely() rather than a bare c() -- lc/elev/slope/dist are
+  # all resampled (derived, not read-straight-from-disk) rasters, which can
+  # silently corrupt when c()-combined in some terra versions/session
+  # states (see combineLayersSafely.R's docstring / DECISIONS.md 2026-09-28).
+  covStack <- combineLayersSafely(c(as.list(lu), as.list(lc), list(elev, slope), extraLayers))
 
   # Strip year/CORINE suffixes so column names match the training data
   names(covStack) <- gsub("_\\d{4}$", "", names(covStack))
