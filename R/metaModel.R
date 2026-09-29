@@ -31,12 +31,22 @@
 #' @param gadmCacheDir Character. Directory to cache the GADM Germany
 #'   boundary in (only used, and only fetched, when `nBootTrend > 0`) --
 #'   see `bootRefRaster` below.
+#' @param cachePath Character, or NULL (default). Directory for
+#'   `reproducible::Cache()`'s per-species(-year) cache -- e.g.
+#'   `cachePath(sim)`, a stable location shared across runs (NOT the
+#'   per-run timestamped `outputDir`), so an unchanged species/config
+#'   reuses its fit across separate `runMe.R` invocations instead of
+#'   refitting from scratch every run -- matching `modelGerHabitat()`/
+#'   `modelGerLandscape()`/`modelEurope()`'s own convention. NULL falls
+#'   back to a temp directory, for standalone/test calls.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `varimpPath`,
 #'   `predictions` (named by year), `perf`, `varimp`, and (if `nBootTrend > 0`)
 #'   `trendBootPath`/`trendBoot`.
 metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, modelDirs,
-                       refRaster, outputDir, nBootTrend = 0, gadmCacheDir = NULL) {
+                       refRaster, outputDir, nBootTrend = 0, gadmCacheDir = NULL,
+                       cachePath = NULL) {
 
+  if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
   suitCols <- c("climate_mean_prob", "landscape_mean_prob", "habitat_mean_prob")
   idCols <- c("AREA_NATIONAL_CODE", "latin_name", "occurrence", "x", "y", "foldID")
@@ -100,51 +110,31 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     X <- as.matrix(trainDf[, suitCols])
     y <- trainDf$occurrence
 
-    if (isValidCachedRDS(outModel)) {
-      message("Loading cached ridge model...")
-      ridgeM <- readRDS(outModel)
-    } else {
-      message("Training ridge regression (alpha = 0)...")
-      set.seed(42)
-      ridgeCv <- glmnet::cv.glmnet(x = X, y = y, family = "binomial", alpha = 0,
-                                    nfolds = 10, standardize = TRUE)
-      ridgeM <- list(model = ridgeCv, lambda = ridgeCv$lambda.1se, suit_cols = suitCols)
+    ridgeM <- reproducible::Cache(
+      fitRidgeOneSpecies, X = X, y = y, suitCols = suitCols,
+      cachePath = cachePath, userTags = c("metaModel", "fit", spClean))
+    coefs <- stats::coef(ridgeM$model, s = ridgeM$lambda)
+    message("Coefficients: intercept = ", round(coefs[1], 4),
+            " | climate = ", round(coefs[2], 4),
+            " | landscape = ", round(coefs[3], 4),
+            " | habitat = ", round(coefs[4], 4))
+    saveRDS(ridgeM, outModel)
+    message("Model saved -> ", outModel)
 
-      coefs <- stats::coef(ridgeCv, s = ridgeCv$lambda.1se)
-      message("Coefficients: intercept = ", round(coefs[1], 4),
-              " | climate = ", round(coefs[2], 4),
-              " | landscape = ", round(coefs[3], 4),
-              " | habitat = ", round(coefs[4], 4))
+    varimp <- reproducible::Cache(
+      computeVariableImportance, trainDf = trainDf, suitCols = suitCols, lambda = ridgeM$lambda,
+      cachePath = cachePath, userTags = c("metaModel", "varimp", spClean))
+    saveRDS(varimp, outVarimp)
+    message(sprintf("Importance: climate = %.3f | landscape = %.3f | habitat = %.3f",
+                     varimp$imp_climate, varimp$imp_landscape, varimp$imp_habitat))
 
-      saveRDS(ridgeM, outModel)
-      message("Model saved -> ", outModel)
-    }
-
-    if (isValidCachedRDS(outVarimp)) {
-      message("Loading cached variable importance...")
-      varimp <- readRDS(outVarimp)
-    } else {
-      message("Computing variable importance (leave-one-out)...")
-      varimp <- computeVariableImportance(trainDf, suitCols, ridgeM$lambda)
-      saveRDS(varimp, outVarimp)
-      message(sprintf("Importance: climate = %.3f | landscape = %.3f | habitat = %.3f",
-                       varimp$imp_climate, varimp$imp_landscape, varimp$imp_habitat))
-    }
-
-    if (isValidCachedRDS(outPerf)) {
-      message("Loading cached performance...")
-      metaPerf <- readRDS(outPerf)
-    } else {
-      message("Running block cross-validation...")
-      cvPred <- blockCVPredictRidge(X, y, trainDf$foldID)
-      validIdx <- !is.na(cvPred)
-      metaPerf <- evalSDM(y[validIdx], cvPred[validIdx])
-      saveRDS(metaPerf, outPerf)
-
-      message("Performance: AUC = ", round(metaPerf$AUC, 3), " | TSS = ", round(metaPerf$TSS, 3),
-              " | D2 = ", round(metaPerf$D2, 3))
-      if (metaPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
-    }
+    metaPerf <- reproducible::Cache(
+      evalRidgeOneSpecies, X = X, y = y, foldID = trainDf$foldID,
+      cachePath = cachePath, userTags = c("metaModel", "eval", spClean))
+    saveRDS(metaPerf, outPerf)
+    message("Performance: AUC = ", round(metaPerf$AUC, 3), " | TSS = ", round(metaPerf$TSS, 3),
+            " | D2 = ", round(metaPerf$D2, 3))
+    if (metaPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
 
     message("Predicting onto German grid for ", length(predictionYears), " years...")
     message("(years before ", min(habitatYears), " are hindcasts -- trained on ",
@@ -178,15 +168,19 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       suitStack <- c(rClim, rLand, rHab)
       names(suitStack) <- suitCols
 
-      predictRidgeToRaster(suitStack, suitCols, ridgeM$model, ridgeM$lambda, metaPerf$thresh, outTif)
+      predRaster <- reproducible::Cache(
+        predictRidgeToRaster, suitStack = suitStack, suitCols = suitCols,
+        ridgeModel = ridgeM$model, lambda = ridgeM$lambda, thresh = metaPerf$thresh,
+        cachePath = cachePath, userTags = c("metaModel", "predict", spClean, as.character(yr)))
+      terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", yr, ": saved -> ", basename(outTif))
       spPredFiles[[as.character(yr)]] <- outTif
 
       if (nBootTrend > 0) {
-        cachePath <- file.path(outputDir, paste0(spClean, "_meta_suitX_", yr, ".rds"))
+        suitXPath <- file.path(outputDir, paste0(spClean, "_meta_suitX_", yr, ".rds"))
         predDf <- as.data.frame(suitStack, xy = FALSE, na.rm = TRUE)
         suitX <- as.matrix(predDf[, suitCols])
-        saveRDS(suitX, cachePath)
+        saveRDS(suitX, suitXPath)
         newXByYear[[as.character(yr)]] <- suitX
       }
     }
@@ -213,4 +207,45 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
   }
 
   result
+}
+
+#' Fit one species' ridge meta-model (the actual computation `metaModel()`
+#' wraps in `reproducible::Cache()`)
+#'
+#' Pulled into its own function so Cache()'s digest covers exactly `X`/`y`
+#' -- i.e. it changes (and only that species refits) when the underlying
+#' scale-level suitability extraction actually changes, not on every new
+#' `runMe.R` run/output folder. Mirrors `fitBRTOneSpecies()`
+#' (`modelGerLandscape.R`) -- same rationale, same reason it's Cache()'d
+#' by the caller rather than internally.
+#'
+#' @param X Numeric matrix, the 3 scales' suitability columns.
+#' @param y Numeric vector, 0/1 occurrence.
+#' @param suitCols Character vector of the 3 suitability column names
+#'   (stored alongside the model for `predictRidgeToRaster()`'s own use).
+#' @return List with `model` (a `cv.glmnet()` fit), `lambda`
+#'   (`lambda.1se`), and `suit_cols`.
+fitRidgeOneSpecies <- function(X, y, suitCols) {
+  message("Training ridge regression (alpha = 0)...")
+  set.seed(42)
+  ridgeCv <- glmnet::cv.glmnet(x = X, y = y, family = "binomial", alpha = 0,
+                                nfolds = 10, standardize = TRUE)
+  list(model = ridgeCv, lambda = ridgeCv$lambda.1se, suit_cols = suitCols)
+}
+
+#' Evaluate one species' fitted ridge meta-model via block cross-validation
+#'
+#' Same Cache()-ing rationale as `fitRidgeOneSpecies()` -- digest covers
+#' `X`/`y`/`foldID`, so a changed input table naturally triggers
+#' re-evaluation too. Mirrors `evalBRTOneSpecies()` (`modelGerLandscape.R`).
+#'
+#' @param X Numeric matrix, the 3 scales' suitability columns.
+#' @param y Numeric vector, 0/1 occurrence.
+#' @param foldID Integer vector, spatial block-CV fold assignment.
+#' @return The `evalSDM()` row (AUC/TSS/Kappa/Sens/Spec/PCC/D2/thresh).
+evalRidgeOneSpecies <- function(X, y, foldID) {
+  message("Running block cross-validation...")
+  cvPred <- blockCVPredictRidge(X, y, foldID)
+  validIdx <- !is.na(cvPred)
+  evalSDM(y[validIdx], cvPred[validIdx])
 }

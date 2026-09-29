@@ -368,7 +368,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           refRaster = refRaster,
           outputDir = file.path(outputPath(sim), metamodelLabel(resolutionsM)),
           nBootTrend = P(sim)$nBootTrend,
-          gadmCacheDir = file.path(inputPath(sim), "predictors", "raw", "gadm"))
+          gadmCacheDir = file.path(inputPath(sim), "predictors", "raw", "gadm"),
+          cachePath = cachePath(sim))
       }
       # ! ----- STOP EDITING ----- ! #
     },
