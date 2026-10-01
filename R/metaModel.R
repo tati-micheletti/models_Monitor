@@ -13,8 +13,14 @@
 #'
 #' @param inputsDataGerHabitat Named list (by species) with `data`, from
 #'   `sim$inputsData$gerHabitat` (inputs_Monitor). Must include a `year` column.
-#' @param habitatYears Integer vector of years with real habitat occurrence
-#'   data (the meta-model's training years).
+#' @param habitatYears Integer vector, or named list (species -> integer
+#'   vector), of years with real habitat occurrence data (the meta-model's
+#'   training years). A named list lets each species train on its own
+#'   real-data window (e.g. Buteo buteo/Sturnus vulgaris's real MhB
+#'   point-count data is negligible before ~2020, while other species
+#'   genuinely span a wider range) -- see `resolveYearsPerSpecies()` in
+#'   `sharedSpeciesConfig.R`. A flat vector applies the same years to every
+#'   species (backward compatible).
 #' @param predictionYears Integer vector of years to predict onto.
 #' @param modelDirs Named list with `europe`, `landscape`, `habitat` prediction directories.
 #' @param refRaster SpatRaster. Shared 200m reference grid (a static
@@ -79,10 +85,12 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     outPerf <- file.path(outputDir, paste0(spClean, "_perf_meta.rds"))
     outVarimp <- file.path(outputDir, paste0(spClean, "_varimp_meta.rds"))
 
-    message("Extracting suitability scores (training years ",
-            paste(range(habitatYears), collapse = "-"), ")...")
+    habitatYearsForSp <- if (is.list(habitatYears)) habitatYears[[sp]] else habitatYears
 
-    trainList <- lapply(habitatYears, function(yr) {
+    message("Extracting suitability scores (training years ",
+            paste(range(habitatYearsForSp), collapse = "-"), ")...")
+
+    trainList <- lapply(habitatYearsForSp, function(yr) {
       spYr <- spPaAll[spPaAll$year == yr, ]
       if (nrow(spYr) == 0) return(NULL)
       message("Year ", yr, ": ", nrow(spYr), " records")
@@ -137,8 +145,8 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     if (metaPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
 
     message("Predicting onto German grid for ", length(predictionYears), " years...")
-    message("(years before ", min(habitatYears), " are hindcasts -- trained on ",
-            paste(range(habitatYears), collapse = "-"), " relationships)")
+    message("(years before ", min(habitatYearsForSp), " are hindcasts -- trained on ",
+            paste(range(habitatYearsForSp), collapse = "-"), " relationships)")
 
     spPredFiles <- list()
     newXByYear <- list()

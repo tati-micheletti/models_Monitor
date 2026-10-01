@@ -12,9 +12,15 @@
 #' superset.
 #'
 #' @param predictionYears Integer vector. User-requested prediction years.
-#' @param habitatYears Integer vector. Years with real habitat occurrence
-#'   data -- `metaModel()`'s training years.
+#' @param habitatYears Integer vector, or named list (species -> integer
+#'   vector). Years with real habitat occurrence data -- `metaModel()`'s
+#'   training years. A list is flattened to the union across every
+#'   species first -- this function covers the scale-level BRTs' own
+#'   predict loop, which processes potentially many species in one batch,
+#'   so it must cover every species' own training years regardless of
+#'   which one requested them.
 #' @return Integer vector, the union, sorted.
 resolveScalePredictionYears <- function(predictionYears, habitatYears) {
-  sort(unique(c(predictionYears, habitatYears)))
+  habitatYearsFlat <- if (is.list(habitatYears)) unlist(habitatYears, use.names = FALSE) else habitatYears
+  sort(unique(c(predictionYears, habitatYearsFlat)))
 }

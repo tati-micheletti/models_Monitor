@@ -61,12 +61,17 @@ defineModule(sim, list(
     defineParameter("climateWindowLength", "numeric", 6, NA, NA,
                     "Rolling window length (years) used to compute the bioclim climatology.",
                     "Must match dataPrep_Monitor's climateWindowLength."),
-    defineParameter("habitatYears", "numeric", 2022:2025, NA, NA,
-                    "Years with real habitat occurrence data -- both habitat's own fitting-",
-                    "year constraint (in dataPrep_Monitor) AND the meta-model's training",
-                    "years here (the same underlying data-availability fact, not two",
-                    "separate parameters -- see DECISIONS.md's 2026-09-28 entry). Must",
-                    "match dataPrep_Monitor's/inputs_Monitor's habitatYears."),
+    defineParameter("habitatYears", "list", NULL, NA, NA,
+                    "Named list, species -> integer vector of years with real habitat",
+                    "occurrence data for that species -- both habitat's own fitting-year",
+                    "constraint (in dataPrep_Monitor) AND the meta-model's training years",
+                    "here (the same underlying data-availability fact, not two separate",
+                    "parameters -- see DECISIONS.md's 2026-09-28 entry). Per-species since",
+                    "2026-10-01 (e.g. Buteo buteo/Sturnus vulgaris's real MhB point-count",
+                    "data is negligible before ~2020, while other species genuinely span a",
+                    "wider range) -- see resolveYearsPerSpecies() (sharedSpeciesConfig.R).",
+                    "Must match dataPrep_Monitor's/inputs_Monitor's habitatYears. No",
+                    "default -- runMe.R must always supply a fully-resolved list."),
 
     ## Scale resolutions (must match dataPrep_Monitor's/inputs_Monitor's copies) -------
     defineParameter("climateResolutionM", "numeric", 50000, NA, NA,
@@ -223,7 +228,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
             landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
                                                        P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
             predictionYears = P(sim)$predictionYears,
-            habitatYears = P(sim)$habitatYears)) {
+            habitatYears = if (is.list(P(sim)$habitatYears)) P(sim)$habitatYears[[P(sim)$runSpecies]] else P(sim)$habitatYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
       }
@@ -259,7 +264,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
             landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
                                                        P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
             predictionYears = P(sim)$predictionYears,
-            habitatYears = P(sim)$habitatYears)) {
+            habitatYears = if (is.list(P(sim)$habitatYears)) P(sim)$habitatYears[[P(sim)$runSpecies]] else P(sim)$habitatYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
       }
@@ -295,7 +300,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
             landscapeResolutionM = resolveResolutionM(P(sim)$runSpecies, "landscape",
                                                        P(sim)$resolutionConfig, P(sim)$landscapeResolutionM),
             predictionYears = P(sim)$predictionYears,
-            habitatYears = P(sim)$habitatYears)) {
+            habitatYears = if (is.list(P(sim)$habitatYears)) P(sim)$habitatYears[[P(sim)$runSpecies]] else P(sim)$habitatYears)) {
         message(P(sim)$runSpecies, ": all 3 scales ready -- also running metaModel in this task.")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
       }
@@ -330,7 +335,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
               habitatResolutionM = habitatResM,
               landscapeResolutionM = landscapeResM,
               predictionYears = P(sim)$predictionYears,
-              habitatYears = P(sim)$habitatYears)) {
+              habitatYears = if (is.list(P(sim)$habitatYears)) P(sim)$habitatYears[[P(sim)$runSpecies]] else P(sim)$habitatYears)) {
           message(P(sim)$runSpecies, ": not all 3 scales ready yet -- skipping metaModel for now.")
           return(invisible(sim))
         }
