@@ -37,7 +37,7 @@ mkdir -p logs
 
 # EVE_R_MODULE is set at submit time (see cluster/submit_eve_pipeline.sh) -- the exact
 # name from `module spider R`. Nothing to edit in this file.
-if [ -n "${EVE_R_MODULE:-}" ]; then module load "${EVE_R_MODULE}"; fi
+if [ -n "${EVE_R_MODULE:-}" ]; then module load ${EVE_R_MODULE}; fi   # may hold several names: "GCC/15.3.0 R/4.6.1" (unquoted on purpose)
 
 Rscript tools/runClusterTask.R \
   --scale meta \
