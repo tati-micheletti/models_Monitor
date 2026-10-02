@@ -17,7 +17,7 @@
 #SBATCH --job-name=birdmon-landscape
 #SBATCH --array=1-11
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=16G
+#SBATCH --mem-per-cpu=13G
 #SBATCH --time=05:00:00
 #SBATCH --output=logs/landscape_%A_%a.out
 #SBATCH --error=logs/landscape_%A_%a.err

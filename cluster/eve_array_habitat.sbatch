@@ -19,7 +19,7 @@
 #SBATCH --job-name=birdmon-habitat
 #SBATCH --array=1-11
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=16G
+#SBATCH --mem-per-cpu=13G
 #SBATCH --time=06:00:00
 #SBATCH --output=logs/habitat_%A_%a.out
 #SBATCH --error=logs/habitat_%A_%a.err
