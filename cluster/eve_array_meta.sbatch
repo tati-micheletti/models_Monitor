@@ -39,6 +39,13 @@ mkdir -p logs
 # name from `module spider R`. Nothing to edit in this file.
 if [ -n "${EVE_R_MODULE:-}" ]; then module load ${EVE_R_MODULE}; fi   # may hold several names: "GCC/15.3.0 R/4.6.1" (unquoted on purpose)
 
+# $TMPDIR on EVE is a RAM disk (half of the node's RAM, shared with the job itself),
+# so terra's large temporary rasters would exhaust memory. Use /work instead and
+# clean up when the job ends (EVE wiki, Storage page).
+export TMPDIR="/work/${USER}/birdMonitor/tmp/${SLURM_JOB_ID}"
+mkdir -p "${TMPDIR}"
+trap 'rm -rf "${TMPDIR}"' EXIT
+
 Rscript tools/runClusterTask.R \
   --scale meta \
   --index "${SLURM_ARRAY_TASK_ID}" \
