@@ -27,7 +27,15 @@ mkdir -p logs
 
 # EVE_R_MODULE is set at submit time (see cluster/submit_eve_pipeline.sh) -- the exact
 # name from `module spider R`. Nothing to edit in this file.
-if [ -n "${EVE_R_MODULE:-}" ]; then module load ${EVE_R_MODULE}; fi   # may hold several names: "GCC/15.3.0 R/4.6.1" (unquoted on purpose)
+# Module list is set HERE (not only by the submit script) so the job never depends on
+# EVE forwarding environment variables. Override at submit time with EVE_R_MODULE=... if needed.
+EVE_R_MODULE="${EVE_R_MODULE:-GCC/13.3.0 OpenMPI/5.0.5 R/4.5.1 GDAL/3.10.3 CMake ImageMagick/7.1.1-38 UDUNITS/2.2.28}"
+module load ${EVE_R_MODULE}
+if ! command -v Rscript >/dev/null 2>&1; then
+  echo "ERROR on $(hostname): Rscript not found after: module load ${EVE_R_MODULE}" >&2
+  module list >&2
+  exit 1
+fi
 
 # $TMPDIR on EVE is a RAM disk (half of the node's RAM, shared with the job itself),
 # so terra's large temporary rasters would exhaust memory. Use /work instead and
