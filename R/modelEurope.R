@@ -87,6 +87,10 @@ modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
       evalBRTOneSpecies, sp = sp, spPa = spPa, predSel = predSel, brtM = brtM,
       cachePath = cachePath, userTags = c("modelEurope", "eval", spClean))
     brtPerf <- evalResult$perf
+    if (!is.null(evalResult$foldModels)) {
+      saveRDS(evalResult$foldModels,
+              file.path(outputDir, paste0(spClean, "_foldModels_climate.rds")))
+    }
     saveRDS(brtPerf, outPerf)
 
     message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),

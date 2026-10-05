@@ -17,9 +17,14 @@
 #' @param brtModel A fitted `gbm.step()` model (see `optimizeBRT()`) whose
 #'   hyperparameters are reused for every fold's refit.
 #' @return Numeric vector of out-of-fold predicted probabilities, same
-#'   length and order as `data`/`foldID`.
+#'   length and order as `data`/`foldID`. The fitted per-fold models are kept in
+#'   `attr(, "foldModels")` (a list named by fold id; fitted with `keep.data = FALSE`, so
+#'   small) instead of being discarded -- they allow fold-based uncertainty (jackknife /
+#'   ensemble spread) later without refitting. Callers that do not need them can ignore the
+#'   attribute.
 blockCVPredictBRT <- function(data, gbmX, gbmY, foldID, brtModel) {
   cvPred <- rep(NA_real_, nrow(data))
+  foldModels <- list()
 
   for (k in sort(unique(foldID))) {
     if (is.na(k)) next
@@ -38,11 +43,13 @@ blockCVPredictBRT <- function(data, gbmX, gbmY, foldID, brtModel) {
                        bag.fraction = brtModel$gbm.call$bag.fraction,
                        interaction.depth = brtModel$gbm.call$tree.complexity,
                        weights = rep(1, nrow(cvTrain)),
-                       verbose = FALSE)
+                       verbose = FALSE, keep.data = FALSE)
+    foldModels[[as.character(k)]] <- cvBrt
 
     cvPred[testIdx] <- gbm::predict.gbm(cvBrt, cvTest, type = "response",
                                          n.trees = brtModel$gbm.call$best.trees)
   }
 
+  attr(cvPred, "foldModels") <- foldModels
   cvPred
 }

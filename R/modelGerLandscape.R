@@ -94,6 +94,10 @@ modelGerLandscape <- function(inputsData, predictionYears, processedRoot, output
       evalBRTOneSpecies, sp = sp, spPa = spPa, predSel = predSel, brtM = brtM,
       cachePath = cachePath, userTags = c("modelGerLandscape", "eval", spClean))
     brtPerf <- evalResult$perf
+    if (!is.null(evalResult$foldModels)) {
+      saveRDS(evalResult$foldModels,
+              file.path(outputDir, paste0(spClean, "_foldModels_landscape.rds")))
+    }
     saveRDS(brtPerf, outPerf)
 
     message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),
@@ -170,16 +174,19 @@ fitBRTOneSpecies <- function(sp, spPa, predSel, startingLR) {
 #' @param spPa data.frame. This species' model-ready table.
 #' @param predSel Character vector. Resolved predictor columns.
 #' @param brtM A fitted `gbm.step()` model.
-#' @return List with `perf` (the `evalSDM()` row) and `explDev` (deviance
-#'   explained at occurrence locations).
+#' @return List with `perf` (the `evalSDM()` row), `explDev` (deviance
+#'   explained at occurrence locations) and `foldModels` (the per-fold refits,
+#'   saved by the callers as `<species>_foldModels_<scale>.rds`).
 evalBRTOneSpecies <- function(sp, spPa, predSel, brtM) {
   message("Running block cross-validation...")
   cvPred <- blockCVPredictBRT(spPa, predSel, "occurrence", spPa$foldID, brtM)
+  foldModels <- attr(cvPred, "foldModels")   # kept (small), see blockCVPredictBRT()
+  attr(cvPred, "foldModels") <- NULL
   brtPerf <- evalSDM(spPa$occurrence, cvPred)
 
   predOcc <- gbm::predict.gbm(brtM, spPa[, predSel], n.trees = brtM$gbm.call$best.trees,
                                type = "response")
   exclDev <- explDeviance(spPa$occurrence, predOcc)
 
-  list(perf = brtPerf, explDev = exclDev)
+  list(perf = brtPerf, explDev = exclDev, foldModels = foldModels)
 }
