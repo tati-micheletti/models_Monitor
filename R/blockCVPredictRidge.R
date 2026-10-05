@@ -20,6 +20,7 @@ blockCVPredictRidge <- function(X, y, foldID, innerNfolds = 5) {
     testIdx <- which(foldID == k)
     if (length(trainIdx) == 0 || length(testIdx) == 0) next
 
+    set.seed(stableSeed(c("cvRidge", k, nrow(X), sum(y))))
     cvFit <- glmnet::cv.glmnet(x = X[trainIdx, , drop = FALSE], y = y[trainIdx],
                                 family = "binomial", alpha = 0, nfolds = innerNfolds,
                                 standardize = TRUE)

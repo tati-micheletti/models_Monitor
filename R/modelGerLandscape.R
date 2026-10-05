@@ -160,6 +160,7 @@ modelGerLandscape <- function(inputsData, predictionYears, processedRoot, output
 #' @return A fitted `gbm.step()` model, or NULL if `optimizeBRT()` gave up.
 fitBRTOneSpecies <- function(sp, spPa, predSel, startingLR) {
   message("Training BRT (optimising learning rate, starting from ", startingLR, ")...")
+  set.seed(stableSeed(c("gbm.step", sp, nrow(spPa), sum(spPa$occurrence), startingLR)))
   optimizeBRT(spPa, predSel, "occurrence", startingLR)
 }
 

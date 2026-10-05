@@ -32,6 +32,7 @@ blockCVPredictBRT <- function(data, gbmX, gbmY, foldID, brtModel) {
     testIdx <- which(foldID == k)
     if (length(trainIdx) == 0 || length(testIdx) == 0) next
 
+    set.seed(stableSeed(c("cvBRT", k, nrow(data), sum(data[[gbmY]]))))
     cvTrain <- data[trainIdx, ]
     cvTest <- data[testIdx, ]
 
