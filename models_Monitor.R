@@ -141,7 +141,41 @@ defineModule(sim, list(
                     paste("If > 0, bootstrap the ridge meta-model this many times per",
                     "species to quantify model-fitting uncertainty in the per-year",
                     "area-mean trend (see bootstrapMetaModelTrend()), in addition to",
-                    "spatial-averaging precision. 0 (default): off, no added cost."))
+                    "spatial-averaging precision. 0 (default): off, no added cost.")),
+
+    ## Uncertainty (option B: spatial-block bootstrap of the BRTs) -- see UNCERTAINTY.md. Off unless
+    ## uncertaintyReps is set. Results go to <outputPath>/uncertainty[_<tag>]/. ----------------------
+    defineParameter("uncertaintyReps", "numeric", NULL, NA, NA,
+                    "NULL (default): no uncertainty analysis. Otherwise the replicate ids of THIS run, e.g. 0:50.",
+                    "Replicate 0 is the main models run through the same machinery (a built-in consistency",
+                    "check against the baseline maps; left out of every interval). Adding replicates later: a",
+                    "new run with disjoint ids (51:100); nothing already computed changes. Single session: the",
+                    "uncertainty events then run after metaModel. Cluster: select ONE step per task with",
+                    "runScale = uncertaintyCovcache/Fit/Coarse/Ridge/Band/Summarize/Assemble/Community."),
+    defineParameter("uncertaintySpecies", "character", NULL, NA, NA,
+                    "The full species roster, in the order the cluster arrays index it (NULL: the species of",
+                    "sim$inputsData). Needed by the steps that look at all species (community maps)."),
+    defineParameter("uncertaintyYears", "numeric", NULL, NA, NA,
+                    "Years to map (NULL: all predictionYears). The habitat training years are always computed."),
+    defineParameter("uncertaintyBands", "numeric", 16, NA, NA,
+                    "Number of horizontal bands the country is cut into (one cluster task per species x band)."),
+    defineParameter("uncertaintyRepBatch", "numeric", 10, NA, NA,
+                    "Replicates held in memory at once while predicting a band."),
+    defineParameter("uncertaintyCores", "numeric", 1, NA, NA,
+                    "Cores for forked prediction/fitting inside one task (ignored on Windows)."),
+    defineParameter("uncertaintyBlockMult", "numeric", 1, NA, NA,
+                    "Multiplier on the resampling block size (the cross-validation block size): sensitivity test."),
+    defineParameter("uncertaintyProbs", "numeric", c(0.05, 0.95), NA, NA,
+                    "Percentiles of the interval (default 5th-95th = a 90% interval)."),
+    defineParameter("uncertaintyTag", "character", "", NA, NA,
+                    "Non-empty: write to uncertainty_<tag>/ instead of uncertainty/ (timing and test runs)."),
+    defineParameter("uncertaintyBaselineYear", "numeric", 2005, NA, NA,
+                    "Baseline year of the change maps (must equal runIndex_Monitor's baselineYear)."),
+    defineParameter("uncertaintyCurrentYear", "numeric", NA_real_, NA, NA,
+                    "Report year of the change maps (NA: max habitat year, as runMe.R's currentYear)."),
+    defineParameter("runBand", "numeric", NA_real_, NA, NA,
+                    "Cluster task of the band-wise uncertainty steps: the one band (1..uncertaintyBands) to do.",
+                    "NA: all bands.")
   ),
   inputObjects = bindrows(
     expectsInput("inputsData", "list",
@@ -174,24 +208,31 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
         stop("models_Monitor's predictionYears parameter must be supplied explicitly ",
              "(e.g. predictionYears from sharedConfig.R) -- no default.")
       }
+      uncertaintyEvents <- c("uncertaintyCovcache", "uncertaintyFit", "uncertaintyCoarse", "uncertaintyRidge",
+                             "uncertaintyBand", "uncertaintySummarize", "uncertaintyAssemble", "uncertaintyCommunity")
       if (!is.na(P(sim)$runScale)) {
-        if (is.na(P(sim)$runSpecies)) {
+        if (is.na(P(sim)$runSpecies) && !(P(sim)$runScale %in% uncertaintyEvents)) {
           stop("runScale is set but runSpecies is NA -- both must be set together ",
                "for a single cluster task (leave both NA for the normal full run).")
         }
-        eventName <- switch(P(sim)$runScale,
-                            europe = "modelEurope",
-                            habitat = "modelGerHabitat",
-                            landscape = "modelGerLandscape",
-                            meta = "metaModel",
-                            stop("runScale must be one of: europe, habitat, landscape, meta ",
-                                 "(got: ", P(sim)$runScale, ")"))
+        eventName <- if (P(sim)$runScale %in% uncertaintyEvents) P(sim)$runScale else
+          switch(P(sim)$runScale,
+                 europe = "modelEurope",
+                 habitat = "modelGerHabitat",
+                 landscape = "modelGerLandscape",
+                 meta = "metaModel",
+                 stop("runScale must be one of: europe, habitat, landscape, meta, ",
+                      paste(uncertaintyEvents, collapse = ", "), " (got: ", P(sim)$runScale, ")"))
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", eventName)
       } else {
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelEurope")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelGerHabitat")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "modelGerLandscape")
         sim <- scheduleEvent(sim, time(sim), "models_Monitor", "metaModel")
+        # Uncertainty (option B) only when asked for: runs after metaModel, in this order.
+        if (!is.null(P(sim)$uncertaintyReps)) {
+          for (ev in uncertaintyEvents) sim <- scheduleEvent(sim, time(sim), "models_Monitor", ev)
+        }
       }
     },
 
@@ -376,6 +417,13 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           gadmCacheDir = file.path(inputPath(sim), "predictors", "raw", "gadm"),
           cachePath = cachePath(sim))
       }
+      # ! ----- STOP EDITING ----- ! #
+    },
+
+    uncertaintyCovcache = , uncertaintyFit = , uncertaintyCoarse = , uncertaintyRidge = ,
+    uncertaintyBand = , uncertaintySummarize = , uncertaintyAssemble = , uncertaintyCommunity = {
+      # ! ----- EDIT BELOW ----- ! #
+      sim <- uncHandleEvent(sim, eventType)   # see R/uncSim.R and UNCERTAINTY.md
       # ! ----- STOP EDITING ----- ! #
     },
 
