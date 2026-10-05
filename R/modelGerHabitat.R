@@ -33,15 +33,20 @@
 #'   `cachePath(sim)`, a stable location shared across runs (NOT the
 #'   per-run timestamped output folder). NULL falls back to a temp
 #'   directory, for standalone/test calls.
+#' @param keepStacksInMemory Logical. FALSE (default): each year's covariate stack is loaded when that year is
+#'   predicted and dropped right after. TRUE: all years' stacks stay in memory and are re-used across species. One year
+#'   at 200 m is ~2.5 GB (measured), so keeping 21 years needs ~50 GB -- far more than a cluster task has (the first EVE
+#'   habitat array died out of memory at 13 GB because of exactly this). Only worth it on a big local machine.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `predictions`
 #'   (named by year), and `perf` (the evalSDM() row).
 modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRoot,
                              resolutionConfig = NULL, sharedResolutionM,
-                             initialLR = 0.08, perSpeciesLR = NULL, cachePath = NULL) {
+                             initialLR = 0.08, perSpeciesLR = NULL, cachePath = NULL,
+                             keepStacksInMemory = FALSE) {
 
   if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
   result <- list()
-  covStacksByResolution <- list()
+  stackCache <- list()
 
   for (sp in names(inputsData)) {
     spClean <- gsub(" ", "_", sp)
@@ -53,12 +58,14 @@ modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRo
     dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
 
     resKey <- as.character(resM)
-    if (is.null(covStacksByResolution[[resKey]])) {
-      covStacksByResolution[[resKey]] <- stats::setNames(
-        lapply(predictionYears, function(yr) loadHabitatCovariates(yr, habitatOutputDir)),
-        as.character(predictionYears))
+    # One year's stack at a time (see keepStacksInMemory): loading all years first needs ~50 GB at 200 m.
+    getStack <- function(yr) {
+      key <- paste(resKey, yr)
+      if (keepStacksInMemory && !is.null(stackCache[[key]])) return(stackCache[[key]])
+      s <- loadHabitatCovariates(yr, habitatOutputDir)
+      if (keepStacksInMemory) stackCache[[key]] <<- s
+      s
     }
-    covStacksByYear <- covStacksByResolution[[resKey]]
 
     spPa <- inputsData[[sp]]$data
     predSel <- inputsData[[sp]]$predictors
@@ -109,7 +116,7 @@ modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRo
     for (yr in predictionYears) {
       outTif <- file.path(outputDir, paste0(spClean, "_pred_habitat_", yr, ".tif"))
 
-      covStack <- covStacksByYear[[as.character(yr)]]
+      covStack <- getStack(yr)
       if (is.null(covStack)) {
         warning("Year ", yr, ": covariates unavailable -- skipping")
         next
@@ -131,6 +138,7 @@ modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRo
       terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", yr, ": saved -> ", basename(outTif))
       spPredFiles[[as.character(yr)]] <- outTif
+      if (!keepStacksInMemory) { rm(covStack, predRaster); invisible(gc()) }
     }
 
     result[[sp]] <- list(modelPath = outModel, perfPath = outPerf,

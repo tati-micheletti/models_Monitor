@@ -137,6 +137,9 @@ defineModule(sim, list(
                     "Should modelGerLandscape be re-run even if sim$landscapeModels exists?"),
     defineParameter("rerunMetaModel", "logical", FALSE, NA, NA,
                     "Should metaModel be re-run even if sim$metaModels exists?"),
+    defineParameter("keepHabitatStacks", "logical", FALSE, NA, NA,
+                    "FALSE (default): the 200 m habitat covariate stack is loaded one year at a time (~2.5 GB each).",
+                    "TRUE: all years stay in memory and are shared across species (~50 GB; only for a big local machine)."),
     defineParameter("nBootTrend", "numeric", 0, NA, NA,
                     paste("If > 0, bootstrap the ridge meta-model this many times per",
                     "species to quantify model-fitting uncertainty in the per-year",
@@ -294,7 +297,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           resolutionConfig = P(sim)$resolutionConfig,
           sharedResolutionM = P(sim)$habitatResolutionM,
           initialLR = P(sim)$habitatInitialLR,
-          cachePath = cachePath(sim))
+          cachePath = cachePath(sim),
+          keepStacksInMemory = P(sim)$keepHabitatStacks)
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
