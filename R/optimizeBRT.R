@@ -67,12 +67,15 @@ optimizeBRT <- function(data, gbmX, gbmY, initialLR, treeComplexity = 2,
       silent = TRUE)
 
     if (inherits(brtM, "try-error") || is.null(brtM)) {
+      # Say WHY it failed: a real fit takes seconds, so failures within the same second point to an error
+      # (e.g. a package that did not load), not to the data. The error text used to be swallowed by try().
+      why <- if (inherits(brtM, "try-error")) substr(trimws(as.character(brtM)), 1, 300) else "gbm.step() returned NULL (no convergence)"
       LR <- LR / 2
       if (LR < minLR) {
         return(giveUp(paste0("learning rate fell below minLR (", minLR, ") after ",
-                              iter, " failed attempt(s).")))
+                              iter, " failed attempt(s); last error: ", why)))
       }
-      message("BRT failed -- halving LR to ", LR)
+      message("BRT failed (", why, ") -- halving LR to ", LR)
     } else if (brtM$gbm.call$best.trees < minTrees) {
       LR <- LR / 2
       if (LR < minLR) {
