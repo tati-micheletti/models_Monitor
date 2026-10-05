@@ -19,9 +19,9 @@
 #SBATCH --job-name=birdmon-habitat
 #SBATCH --array=1-11
 #SBATCH --cpus-per-task=1
-# Memory: one 200 m year is ~2.5 GB in memory and predicting it peaks at ~10 GB of R heap (measured) plus terra and
+# Memory: one 200 m year is ~2.5 GB in memory; predicting it peaks at ~10 GB of R heap and was seen at >= 11.6 GB of process memory (measured), plus terra and
 # the Cache() digest. The first run (13G) died out of memory because ALL years were loaded up front (fixed: one year at a time).
-#SBATCH --mem-per-cpu=30G
+#SBATCH --mem-per-cpu=20G
 #SBATCH --time=12:00:00
 #SBATCH --output=logs/habitat_%A_%a.out
 #SBATCH --error=logs/habitat_%A_%a.err
