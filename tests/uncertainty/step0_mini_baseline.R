@@ -61,6 +61,6 @@ habTable <- uncTrainingTable(cfg, sp, "habitat")
 t0 <- Sys.time()
 mm <- metaModel(inputsDataGerHabitat = setNames(list(list(data = habTable)), sp), habitatYears = hy, predictionYears = Y,
                 modelDirs = list(europe = uncMainDir(cfg, sp, "climate"), landscape = uncMainDir(cfg, sp, "landscape"), habitat = uncMainDir(cfg, sp, "habitat")),
-                refRaster = win, outputDir = metaDir, cachePath = file.path(tempdir(), "utest_cache"))
+                refRaster = win, outputDir = metaDir, cachePath = file.path(tempdir(), "utest_cache"), honestCfg = cfg)
 cat("metaModel secs:", round(difftime(Sys.time(), t0, units = "secs")), "\n")
 cat("DONE step 0\n")

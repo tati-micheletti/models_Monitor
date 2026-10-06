@@ -18,8 +18,11 @@ outside the project: the "uncertainty" document (A) of the document set.
    enter (twice if drawn twice). Redraw, deterministically, if a draw has fewer than 10 presences or absences.
 3. Refit each scale's BRT on the draw with the **fixed hyperparameters** of the main model (trees, learning rate, bag
    fraction, tree complexity). Hyperparameters are not re-tuned (as in the Boreal Avian Modelling Project).
-4. Fit the **ridge meta-model** of that replicate on the replicate's own scale predictions at the habitat records
-   (training rows = the same habitat draw).
+4. Fit the **ridge meta-model** of that replicate (weights never negative) on the replicate's own scale predictions at
+   the habitat records (training rows = the same habitat draw). The predictions are **out-of-fold**: each record is
+   predicted by a refit of the replicate's BRT that never saw the record's block (the replicate's draw minus the record's
+   block-CV fold, same fixed hyperparameters), so the weights are honest, as in the baseline (`uncOofSpecies()`, step `oof`).
+   Replicate 0 uses the saved fold models of the main BRTs, i.e. it equals the baseline.
 5. Predict **all years** with the replicate's three BRTs + ridge, resampling the coarse scales to the 200 m grid exactly
    like the baseline.
 6. Compute everything derived (change, trend, area mean, index) **inside each replicate**, then take percentiles
@@ -38,6 +41,7 @@ caller's RNG state is restored. Adding replicates later (ids 51–100) never cha
 | `species_index_uncertainty.csv` (annual_report/, all species) | per species and year: mean, median, 90% interval of the species' area-mean probability and of the **index** (100 × area mean ÷ baseline-year area mean). |
 | `area_mean_replicates.csv` | the raw numbers behind it: area mean of every replicate and year (long format). |
 | `replicate_log.csv` | one row per fitted model: seeds, attempts, blocks, rows drawn, presences/absences, hyperparameters, git commits, time. |
+| `oof/oof_<run>.rds` | out-of-fold scale predictions at the habitat records, per replicate (the inputs the weights are trained on). |
 | `ridge/ridge_<run>.rds` | ridge coefficients per replicate and how many records each used. |
 
 Across species (`outputs/<runName>/uncertainty/`):

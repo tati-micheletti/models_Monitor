@@ -47,10 +47,10 @@
 #'   back to a temp directory, for standalone/test calls.
 #' @param honestCfg Configuration from `uncCfgFromParams()`, or NULL. If given, the reported accuracy
 #'   (`<species>_perf_meta.rds`) is computed on OUT-OF-FOLD scale predictions (`metaOutOfFoldCheck()`), the way Wiedenroth
-#'   et al. validate their meta-model, instead of on the in-sample predictions of the main models (which flatters the
-#'   result: by the time a block is held out for the combiner, its inputs already contain what the BRTs learned from that
-#'   very block). The maps never depend on this: they use the ridge fitted below, and the binary-map threshold always
-#'   comes from the in-sample evaluation (`<species>_perf_meta_inSample.rds`, saved either way). NULL: in-sample only.
+#'   et al. validate their meta-model. Given, the ridge WEIGHTS are trained on those out-of-fold inputs too (stacked
+#'   generalization; improvements.md item 16) and then applied to the main models' maps; the accuracy and the binary-map
+#'   threshold come from the same inputs. The old in-sample accuracy is saved for comparison only
+#'   (`<species>_perf_meta_inSample.rds`). NULL: everything in-sample (the former behaviour).
 #' @return Named list (by species) with `modelPath`, `perfPath`, `varimpPath`,
 #'   `predictions` (named by year), `perf`, `perfInSample`, `varimp`, and (if `nBootTrend > 0`)
 #'   `trendBootPath`/`trendBoot`.
@@ -123,17 +123,37 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       next
     }
 
-    X <- as.matrix(trainDf[, suitCols])
-    y <- trainDf$occurrence
+    # In-sample inputs: the MAIN models' predictions at the training records (flattered -- improvements.md item 16).
+    Xin <- as.matrix(trainDf[, suitCols]); yIn <- trainDf$occurrence; foldIn <- trainDf$foldID
+    X <- Xin; y <- yIn; foldId <- foldIn
+    trainBasis <- "in-sample inputs"
+
+    # HONEST weights: the ridge is trained on OUT-OF-FOLD inputs (each record predicted by models that never saw its
+    # block), then applied to the main models' maps -- stacked generalization (Wolpert 1992; Breiman 1996).
+    if (!is.null(honestCfg)) {
+      chk <- if (file.exists(outCheck)) tryCatch(readRDS(outCheck), error = function(e) NULL) else NULL
+      if (is.null(chk) || !identical(chk$ridgeSpec, "lower.limits=0")) {
+        message("Out-of-fold inputs (fold models of the three scales)...")
+        chk <- tryCatch({ r <- metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- "lower.limits=0"; saveRDS(r, outCheck); r },
+                        error = function(e) { warning("Out-of-fold inputs failed for ", sp, " (", conditionMessage(e),
+                                                      ") -- falling back to IN-SAMPLE weights, flagged as such."); NULL })
+      }
+      if (!is.null(chk)) {
+        X <- chk$oof$X; y <- chk$oof$y; foldId <- chk$oof$foldID; trainBasis <- "out-of-fold inputs"
+        message("Weights trained on out-of-fold inputs: ", length(y), " records")
+      }
+    }
+    trainDf <- data.frame(occurrence = y, X, foldID = foldId); colnames(trainDf)[2:4] <- suitCols
 
     ridgeM <- reproducible::Cache(
       fitRidgeOneSpecies, X = X, y = y, suitCols = suitCols,
       cachePath = cachePath, userTags = c("metaModel", "fit", spClean))
     coefs <- stats::coef(ridgeM$model, s = ridgeM$lambda)
-    message("Coefficients: intercept = ", round(coefs[1], 4),
+    message("Coefficients (", trainBasis, "): intercept = ", round(coefs[1], 4),
             " | climate = ", round(coefs[2], 4),
             " | landscape = ", round(coefs[3], 4),
             " | habitat = ", round(coefs[4], 4))
+    ridgeM$trainBasis <- trainBasis
     saveRDS(ridgeM, outModel)
     message("Model saved -> ", outModel)
 
@@ -144,32 +164,27 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     message(sprintf("Importance: climate = %.3f | landscape = %.3f | habitat = %.3f",
                      varimp$imp_climate, varimp$imp_landscape, varimp$imp_habitat))
 
-    # In-sample evaluation: the inputs are the MAIN models' predictions. Flattered, but it is what the binary-map
-    # threshold has always come from, so it stays the mapping threshold.
-    metaPerfIn <- reproducible::Cache(
-      evalRidgeOneSpecies, X = X, y = y, foldID = trainDf$foldID,
+    # Accuracy of the combiner: spatial-block CV on the SAME inputs the weights were trained on (out-of-fold when honest).
+    metaPerf <- reproducible::Cache(
+      evalRidgeOneSpecies, X = X, y = y, foldID = foldId,
       cachePath = cachePath, userTags = c("metaModel", "eval", spClean))
-    saveRDS(metaPerfIn, outPerfIn)
-    message("Performance, in-sample inputs (flattered): AUC = ", round(metaPerfIn$AUC, 3), " | TSS = ", round(metaPerfIn$TSS, 3),
-            " | D2 = ", round(metaPerfIn$D2, 3))
-
-    # Honest evaluation: out-of-fold inputs. This is the accuracy to report.
-    metaPerf <- metaPerfIn; metaPerf$evalBasis <- "in-sample inputs"
-    if (!is.null(honestCfg)) {
-      ridgeSpec <- "lower.limits=0"
-      chk <- if (file.exists(outCheck)) tryCatch(readRDS(outCheck), error = function(e) NULL) else NULL
-      if (is.null(chk) || !identical(chk$ridgeSpec, ridgeSpec)) {
-        message("Out-of-fold evaluation (fold models of the three scales)...")
-        chk <- tryCatch({ r <- metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- ridgeSpec; saveRDS(r, outCheck); r },
-                        error = function(e) { warning("Out-of-fold evaluation failed for ", sp, " (", conditionMessage(e),
-                                                      ") -- reporting the in-sample accuracy, flagged as such."); NULL })
-      }
-      if (!is.null(chk)) { metaPerf <- chk$perfOutOfFold; metaPerf$evalBasis <- "out-of-fold inputs" }
-    }
+    metaPerf$evalBasis <- trainBasis
     saveRDS(metaPerf, outPerf)
-    message("Performance (", metaPerf$evalBasis, "): AUC = ", round(metaPerf$AUC, 3), " | TSS = ", round(metaPerf$TSS, 3),
+    message("Performance (", trainBasis, "): AUC = ", round(metaPerf$AUC, 3), " | TSS = ", round(metaPerf$TSS, 3),
             " | D2 = ", round(metaPerf$D2, 3))
     if (metaPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
+    # The old number, for comparison only (its inputs are flattered).
+    metaPerfIn <- if (identical(trainBasis, "in-sample inputs")) metaPerf else reproducible::Cache(
+      evalRidgeOneSpecies, X = Xin, y = yIn, foldID = foldIn,
+      cachePath = cachePath, userTags = c("metaModel", "eval", spClean))
+    saveRDS(metaPerfIn, outPerfIn)
+    message("  (for comparison, in-sample inputs: AUC = ", round(metaPerfIn$AUC, 3), ")")
+
+    # Maps written with DIFFERENT weights must never be reused: remember which ridge they came from.
+    ridgeId <- paste(c(trainBasis, signif(as.vector(coefs), 8)), collapse = "|")
+    ridgeIdFile <- file.path(outputDir, paste0(spClean, "_meta_ridgeid.txt"))
+    mapsCurrent <- file.exists(ridgeIdFile) && identical(readLines(ridgeIdFile, warn = FALSE)[1], ridgeId)
+    if (!mapsCurrent) message("The ridge weights differ from those of the existing maps (or none exist): every year is rebuilt.")
 
     message("Predicting onto German grid for ", length(predictionYears), " years...")
     message("(years before ", min(habitatYearsForSp), " are hindcasts -- trained on ",
@@ -181,7 +196,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     for (yr in predictionYears) {
       outTif <- file.path(outputDir, paste0(spClean, "_meta_suitability_", yr, ".tif"))
 
-      if (isValidPredictionRaster(outTif, layerName = "meta_prob")) {
+      if (mapsCurrent && isValidPredictionRaster(outTif, layerName = "meta_prob")) {
         message("Year ", yr, ": cache hit")
         spPredFiles[[as.character(yr)]] <- outTif
         if (nBootTrend > 0) {
@@ -205,7 +220,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
 
       predRaster <- reproducible::Cache(
         predictRidgeToRaster, suitStack = suitStack, suitCols = suitCols,
-        ridgeModel = ridgeM$model, lambda = ridgeM$lambda, thresh = metaPerfIn$thresh,
+        ridgeModel = ridgeM$model, lambda = ridgeM$lambda, thresh = metaPerf$thresh,
         cachePath = cachePath, userTags = c("metaModel", "predict", spClean, as.character(yr)))
       terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", yr, ": saved -> ", basename(outTif))
@@ -219,6 +234,8 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
         newXByYear[[as.character(yr)]] <- suitX
       }
     }
+
+    writeLines(ridgeId, ridgeIdFile)
 
     trendBootPath <- NULL
     trendBoot <- NULL

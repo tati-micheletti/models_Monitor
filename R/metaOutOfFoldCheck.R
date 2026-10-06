@@ -93,7 +93,8 @@ metaOutOfFoldCheck <- function(cfg, sp) {
     cvFit <- fitRidgeCv(Xk, yk, nfolds = 10)
     cvPred <- blockCVPredictRidge(Xk, yk, foldHab[ok])
     v <- !is.na(cvPred)
-    list(perf = evalSDM(yk[v], cvPred[v]), coef = as.vector(stats::coef(cvFit, s = cvFit$lambda.1se)), n = sum(ok))
+    list(perf = evalSDM(yk[v], cvPred[v]), coef = as.vector(stats::coef(cvFit, s = cvFit$lambda.1se)), n = sum(ok),
+         X = Xk, y = yk, fold = foldHab[ok])
   }
   fIn <- fitAndEval(inSample); fOof <- fitAndEval(oof)
   single <- function(v, label) { ok <- !is.na(v); cbind(data.frame(variant = label), evalSDM(y[ok], v[ok])) }
@@ -110,5 +111,6 @@ metaOutOfFoldCheck <- function(cfg, sp) {
   pipe <- if (length(pipeFile)) { m <- readRDS(pipeFile[1]); as.vector(stats::coef(m$model, s = m$lambda)) } else rep(NA_real_, 4)
   coefs <- rbind(coefs, pipeline = pipe)
   list(species = sp, n = fIn$n, performance = cbind(species = sp, perf), coefficients = coefs,
-       perfOutOfFold = fOof$perf, perfInSample = fIn$perf)
+       perfOutOfFold = fOof$perf, perfInSample = fIn$perf,
+       oof = list(X = fOof$X, y = fOof$y, foldID = fOof$fold))
 }

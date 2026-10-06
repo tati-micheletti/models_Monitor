@@ -43,6 +43,7 @@ uncHandleEvent <- function(sim, eventType) {
     uncertaintyCovcache = uncCovcache(cfg),
     uncertaintyFit = for (sp in spRun) uncFitSpecies(cfg, sp),
     uncertaintyCoarse = for (sp in spRun) uncCoarseSpecies(cfg, sp),
+    uncertaintyOof = for (sp in spRun) uncOofSpecies(cfg, sp),
     uncertaintyRidge = for (sp in spRun) uncRidgeSpecies(cfg, sp),
     uncertaintyBand = for (sp in spRun) {
       ctx <- uncContext(cfg, sp)

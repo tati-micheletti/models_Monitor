@@ -219,7 +219,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
         stop("models_Monitor's predictionYears parameter must be supplied explicitly ",
              "(e.g. predictionYears from sharedConfig.R) -- no default.")
       }
-      uncertaintyEvents <- c("uncertaintyCovcache", "uncertaintyFit", "uncertaintyCoarse", "uncertaintyRidge",
+      uncertaintyEvents <- c("uncertaintyCovcache", "uncertaintyFit", "uncertaintyCoarse", "uncertaintyOof", "uncertaintyRidge",
                              "uncertaintyBand", "uncertaintySummarize", "uncertaintyAssemble", "uncertaintyCommunity")
       if (!is.na(P(sim)$runScale)) {
         if (is.na(P(sim)$runSpecies) && !(P(sim)$runScale %in% uncertaintyEvents)) {
@@ -454,7 +454,7 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
       # ! ----- STOP EDITING ----- ! #
     },
 
-    uncertaintyCovcache = , uncertaintyFit = , uncertaintyCoarse = , uncertaintyRidge = ,
+    uncertaintyCovcache = , uncertaintyFit = , uncertaintyCoarse = , uncertaintyOof = , uncertaintyRidge = ,
     uncertaintyBand = , uncertaintySummarize = , uncertaintyAssemble = , uncertaintyCommunity = {
       # ! ----- EDIT BELOW ----- ! #
       sim <- uncHandleEvent(sim, eventType)   # see R/uncSim.R and UNCERTAINTY.md

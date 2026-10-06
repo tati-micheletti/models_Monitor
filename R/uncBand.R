@@ -133,7 +133,8 @@ uncPredictBandYear <- function(cfg, sp, ctx, ridge, year, band) {
 #' Fit the ridge meta-model of every replicate of this run
 #'
 #' Training values: the replicate's own climate/landscape/habitat suitability at the habitat records of the
-#' habitat years, obtained through the SAME resampling as the maps (uncBandSuitability()). Training rows: the
+#' habitat years, OUT-OF-FOLD (each record predicted by a refit of the replicate's BRT that never saw its block,
+#' uncOofSpecies()), so the weights are honest. Training rows: the
 #' replicate's habitat bootstrap draw (the same blocks that refit the habitat BRT), so one resample of the
 #' habitat data feeds both. Replicates fit with spatial-block folds for lambda (the baseline's plain 10-fold CV
 #' would put copies of a resampled block in training and test folds); replicate 0 mimics the baseline exactly.
@@ -146,25 +147,14 @@ uncRidgeSpecies <- function(cfg, sp) {
   rowsAll <- which(spPa$year %in% hy)
   xy <- cbind(spPa$x, spPa$y)
   nRep <- length(ctx$ids)
+  # HONEST inputs: out-of-fold predictions of each replicate's own scale models at the habitat records (uncOofSpecies()).
+  oofF <- file.path(uncSpDir(cfg, sp, "oof"), paste0("oof_", cfg$repLabel, ".rds"))
+  if (!file.exists(oofF)) stop("Out-of-fold inputs missing: ", oofF, " -- run the 'oof' step before 'ridge' (the replicate weights are trained on them).")
+  oof <- readRDS(oofF)
+  if (!identical(as.integer(oof$ids), as.integer(ctx$ids)) || !identical(as.integer(oof$rows), as.integer(rowsAll)))
+    stop("Out-of-fold inputs do not match this run's replicates/records: ", oofF)
   Sx <- array(NA_real_, c(nrow(spPa), 3, nRep), dimnames = list(NULL, c("clim", "land", "hab"), NULL))
-  bands <- uncBands(cfg, sp)$bands
-
-  for (band in bands) {
-    cellIn <- terra::cellFromXY(band$template, xy)
-    for (yr in hy) {
-      rows <- rowsAll[!is.na(cellIn[rowsAll]) & spPa$year[rowsAll] == yr]
-      if (!length(rows)) next
-      pd <- 3 * terra::res(band$template)[1]    # a few cells of padding: also keeps a single point from giving an empty extent
-      sub <- terra::crop(band$template, terra::ext(min(xy[rows, 1]) - pd, max(xy[rows, 1]) + pd, min(xy[rows, 2]) - pd, max(xy[rows, 2]) + pd), snap = "out")
-      cellSub <- terra::cellFromXY(sub, xy[rows, , drop = FALSE])
-      for (bt in split(seq_len(nRep), ceiling(seq_len(nRep) / max(cfg$repBatch, 25L)))) {   # bigger batches: few points, small windows
-        S <- uncBandSuitability(cfg, sp, ctx, yr, sub, bt, ptsXY = xy[rows, , drop = FALSE])
-        if (is.null(S)) stop("Ridge training year ", yr, ": a scale has no prediction (coarse step incomplete?)")
-        for (k in c("clim", "land", "hab")) Sx[rows, k, bt] <- S[[k]][cellSub, , drop = FALSE]
-      }
-      message("Ridge training values: band ", band$k, ", year ", yr, ": ", length(rows), " records")
-    }
-  }
+  Sx[rowsAll, , ] <- oof$S
 
   blockIds <- uncBlockIds(spPa$x, spPa$y, ctx$models$habitat$blockSizeM)
   coef <- matrix(NA_real_, nRep, 4, dimnames = list(paste0("rep_", ctx$ids), c("intercept", "climate", "landscape", "habitat")))
