@@ -4,10 +4,9 @@
 #' is removed (its unique contribution), floored at 0 and normalised
 #' across the three predictors so they sum to 1 -- scale-invariant and
 #' comparable across species, unlike raw glmnet coefficients. Follows
-#' Wiedenroth et al. NOTE: unlike Wiedenroth's version, no
-#' `lower.limits = 0` is applied in `fitDevRatio()`, matching how the
-#' actual ridge meta-model is fit (unconstrained), so this stays
-#' internally consistent with it.
+#' Wiedenroth et al. `lower.limits = 0` is applied in `fitDevRatio()`, exactly
+#' as in the ridge meta-model itself (`fitRidgeCv()`: no negative weights), so
+#' the two stay internally consistent.
 #'
 #' @param trainDf data.frame with `occurrence`, `climate_mean_prob`,
 #'   `landscape_mean_prob`, and `habitat_mean_prob` columns.

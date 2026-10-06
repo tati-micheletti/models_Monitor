@@ -48,8 +48,7 @@ bootstrapMetaModelTrend <- function(X, y, newXByYear, nBoot = 200, seed = 42) {
     if (length(unique(yb)) < 2) next
 
     fitB <- tryCatch(
-      glmnet::cv.glmnet(x = Xb, y = yb, family = "binomial", alpha = 0,
-                         nfolds = 5, standardize = TRUE),
+      fitRidgeCv(Xb, yb, nfolds = 5),
       error = function(e) NULL)
     if (is.null(fitB)) next
 

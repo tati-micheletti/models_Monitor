@@ -6,6 +6,6 @@
 #' @return Numeric, `glmnet`'s `dev.ratio`.
 fitDevRatio <- function(X, y, lambda) {
   fit <- glmnet::glmnet(x = X, y = y, family = "binomial", alpha = 0,
-                         lambda = lambda, standardize = TRUE)
+                         lambda = lambda, standardize = TRUE, lower.limits = 0)
   fit$dev.ratio
 }

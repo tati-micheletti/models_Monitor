@@ -148,6 +148,11 @@ defineModule(sim, list(
                     "species to quantify model-fitting uncertainty in the per-year",
                     "area-mean trend (see bootstrapMetaModelTrend()), in addition to",
                     "spatial-averaging precision. 0 (default): off, no added cost.")),
+    defineParameter("metaHonestEval", "logical", TRUE, NA, NA,
+                    "TRUE (default): the meta-model's reported accuracy (<species>_perf_meta.rds) is computed on",
+                    "OUT-OF-FOLD scale predictions (each habitat record predicted by models that never saw its block;",
+                    "see metaOutOfFoldCheck()). FALSE: the old in-sample number (flattered, AUC ~0.99). The maps do not",
+                    "depend on this; the in-sample row is always saved as <species>_perf_meta_inSample.rds."),
 
     ## Uncertainty (option B: spatial-block bootstrap of the BRTs) -- see UNCERTAINTY.md. Off unless
     ## uncertaintyReps is set. Results go to <outputPath>/uncertainty[_<tag>]/. ----------------------
@@ -436,6 +441,12 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
                             habitat = file.path(outputPath(sim), scaleLabel(habitatResM))),
           refRaster = refRaster,
           outputDir = file.path(outputPath(sim), metamodelLabel(resolutionsM)),
+          honestCfg = if (isTRUE(P(sim)$metaHonestEval)) uncCfgFromParams(
+            inputRoot = inputPath(sim), outputRoot = outputPath(sim), species = names(inputsDataGerHabitat),
+            predictionYears = P(sim)$predictionYears, habitatYears = P(sim)$habitatYears,
+            resolutionConfig = P(sim)$resolutionConfig, climateResolutionM = P(sim)$climateResolutionM,
+            habitatResolutionM = P(sim)$habitatResolutionM, landscapeResolutionM = P(sim)$landscapeResolutionM,
+            climateWindowLength = P(sim)$climateWindowLength, reps = 1, codeRoot = getwd()) else NULL,
           nBootTrend = P(sim)$nBootTrend,
           gadmCacheDir = file.path(inputPath(sim), "predictors", "raw", "gadm"),
           cachePath = cachePath(sim))

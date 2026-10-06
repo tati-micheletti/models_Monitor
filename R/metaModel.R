@@ -45,12 +45,18 @@
 #'   refitting from scratch every run -- matching `modelGerHabitat()`/
 #'   `modelGerLandscape()`/`modelEurope()`'s own convention. NULL falls
 #'   back to a temp directory, for standalone/test calls.
+#' @param honestCfg Configuration from `uncCfgFromParams()`, or NULL. If given, the reported accuracy
+#'   (`<species>_perf_meta.rds`) is computed on OUT-OF-FOLD scale predictions (`metaOutOfFoldCheck()`), the way Wiedenroth
+#'   et al. validate their meta-model, instead of on the in-sample predictions of the main models (which flatters the
+#'   result: by the time a block is held out for the combiner, its inputs already contain what the BRTs learned from that
+#'   very block). The maps never depend on this: they use the ridge fitted below, and the binary-map threshold always
+#'   comes from the in-sample evaluation (`<species>_perf_meta_inSample.rds`, saved either way). NULL: in-sample only.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `varimpPath`,
-#'   `predictions` (named by year), `perf`, `varimp`, and (if `nBootTrend > 0`)
+#'   `predictions` (named by year), `perf`, `perfInSample`, `varimp`, and (if `nBootTrend > 0`)
 #'   `trendBootPath`/`trendBoot`.
 metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, modelDirs,
                        refRaster, outputDir, nBootTrend = 0, gadmCacheDir = NULL,
-                       cachePath = NULL) {
+                       cachePath = NULL, honestCfg = NULL) {
 
   if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
@@ -83,6 +89,8 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
 
     outModel <- file.path(outputDir, paste0(spClean, "_ridge_meta.rds"))
     outPerf <- file.path(outputDir, paste0(spClean, "_perf_meta.rds"))
+    outPerfIn <- file.path(outputDir, paste0(spClean, "_perf_meta_inSample.rds"))
+    outCheck <- file.path(outputDir, paste0(spClean, "_meta_check.rds"))
     outVarimp <- file.path(outputDir, paste0(spClean, "_varimp_meta.rds"))
 
     habitatYearsForSp <- if (is.list(habitatYears)) habitatYears[[sp]] else habitatYears
@@ -136,11 +144,30 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     message(sprintf("Importance: climate = %.3f | landscape = %.3f | habitat = %.3f",
                      varimp$imp_climate, varimp$imp_landscape, varimp$imp_habitat))
 
-    metaPerf <- reproducible::Cache(
+    # In-sample evaluation: the inputs are the MAIN models' predictions. Flattered, but it is what the binary-map
+    # threshold has always come from, so it stays the mapping threshold.
+    metaPerfIn <- reproducible::Cache(
       evalRidgeOneSpecies, X = X, y = y, foldID = trainDf$foldID,
       cachePath = cachePath, userTags = c("metaModel", "eval", spClean))
+    saveRDS(metaPerfIn, outPerfIn)
+    message("Performance, in-sample inputs (flattered): AUC = ", round(metaPerfIn$AUC, 3), " | TSS = ", round(metaPerfIn$TSS, 3),
+            " | D2 = ", round(metaPerfIn$D2, 3))
+
+    # Honest evaluation: out-of-fold inputs. This is the accuracy to report.
+    metaPerf <- metaPerfIn; metaPerf$evalBasis <- "in-sample inputs"
+    if (!is.null(honestCfg)) {
+      ridgeSpec <- "lower.limits=0"
+      chk <- if (file.exists(outCheck)) tryCatch(readRDS(outCheck), error = function(e) NULL) else NULL
+      if (is.null(chk) || !identical(chk$ridgeSpec, ridgeSpec)) {
+        message("Out-of-fold evaluation (fold models of the three scales)...")
+        chk <- tryCatch({ r <- metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- ridgeSpec; saveRDS(r, outCheck); r },
+                        error = function(e) { warning("Out-of-fold evaluation failed for ", sp, " (", conditionMessage(e),
+                                                      ") -- reporting the in-sample accuracy, flagged as such."); NULL })
+      }
+      if (!is.null(chk)) { metaPerf <- chk$perfOutOfFold; metaPerf$evalBasis <- "out-of-fold inputs" }
+    }
     saveRDS(metaPerf, outPerf)
-    message("Performance: AUC = ", round(metaPerf$AUC, 3), " | TSS = ", round(metaPerf$TSS, 3),
+    message("Performance (", metaPerf$evalBasis, "): AUC = ", round(metaPerf$AUC, 3), " | TSS = ", round(metaPerf$TSS, 3),
             " | D2 = ", round(metaPerf$D2, 3))
     if (metaPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
 
@@ -178,7 +205,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
 
       predRaster <- reproducible::Cache(
         predictRidgeToRaster, suitStack = suitStack, suitCols = suitCols,
-        ridgeModel = ridgeM$model, lambda = ridgeM$lambda, thresh = metaPerf$thresh,
+        ridgeModel = ridgeM$model, lambda = ridgeM$lambda, thresh = metaPerfIn$thresh,
         cachePath = cachePath, userTags = c("metaModel", "predict", spClean, as.character(yr)))
       terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", yr, ": saved -> ", basename(outTif))
@@ -209,7 +236,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     }
 
     result[[sp]] <- list(modelPath = outModel, perfPath = outPerf, varimpPath = outVarimp,
-                          predictions = spPredFiles, perf = metaPerf, varimp = varimp,
+                          predictions = spPredFiles, perf = metaPerf, perfInSample = metaPerfIn, varimp = varimp,
                           trendBootPath = trendBootPath, trendBoot = trendBoot)
     message("  == Done: ", sp, " ==============================")
   }
@@ -234,10 +261,9 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
 #' @return List with `model` (a `cv.glmnet()` fit), `lambda`
 #'   (`lambda.1se`), and `suit_cols`.
 fitRidgeOneSpecies <- function(X, y, suitCols) {
-  message("Training ridge regression (alpha = 0)...")
+  message("Training ridge regression (alpha = 0, no negative weights)...")
   set.seed(42)
-  ridgeCv <- glmnet::cv.glmnet(x = X, y = y, family = "binomial", alpha = 0,
-                                nfolds = 10, standardize = TRUE)
+  ridgeCv <- fitRidgeCv(X, y, nfolds = 10)
   list(model = ridgeCv, lambda = ridgeCv$lambda.1se, suit_cols = suitCols)
 }
 

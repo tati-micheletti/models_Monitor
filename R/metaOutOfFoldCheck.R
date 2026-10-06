@@ -17,8 +17,9 @@
 #'
 #' @param cfg Uncertainty/baseline configuration from `uncCfgFromParams()`.
 #' @param sp Character. Species.
-#' @return List: `performance` (data.frame, one row per variant), `coefficients` (matrix), `n` (records), `pipelineRidge`
-#'   (the pipeline's own coefficients, as a sanity check against the in-sample refit).
+#' @return List: `performance` (data.frame, one row per variant), `coefficients` (matrix, incl. the pipeline's own as a
+#'   sanity check against the in-sample refit), `n` (records), `perfOutOfFold` / `perfInSample` (the two meta-model
+#'   `evalSDM()` rows; `perfOutOfFold` is what `metaModel()` reports).
 metaOutOfFoldCheck <- function(cfg, sp) {
   spClean <- gsub(" ", "_", sp)
   hy <- cfg$habitatYearsOf(sp)
@@ -89,7 +90,7 @@ metaOutOfFoldCheck <- function(cfg, sp) {
     ok <- stats::complete.cases(X); Xk <- X[ok, , drop = FALSE]; yk <- y[ok]
     colnames(Xk) <- suitCols
     set.seed(42)
-    cvFit <- glmnet::cv.glmnet(x = Xk, y = yk, family = "binomial", alpha = 0, nfolds = 10, standardize = TRUE)
+    cvFit <- fitRidgeCv(Xk, yk, nfolds = 10)
     cvPred <- blockCVPredictRidge(Xk, yk, foldHab[ok])
     v <- !is.na(cvPred)
     list(perf = evalSDM(yk[v], cvPred[v]), coef = as.vector(stats::coef(cvFit, s = cvFit$lambda.1se)), n = sum(ok))
@@ -108,5 +109,6 @@ metaOutOfFoldCheck <- function(cfg, sp) {
   pipeFile <- list.files(cfg$outputRoot, pattern = paste0("^", spClean, "_ridge_meta[.]rds$"), recursive = TRUE, full.names = TRUE)
   pipe <- if (length(pipeFile)) { m <- readRDS(pipeFile[1]); as.vector(stats::coef(m$model, s = m$lambda)) } else rep(NA_real_, 4)
   coefs <- rbind(coefs, pipeline = pipe)
-  list(species = sp, n = fIn$n, performance = cbind(species = sp, perf), coefficients = coefs)
+  list(species = sp, n = fIn$n, performance = cbind(species = sp, perf), coefficients = coefs,
+       perfOutOfFold = fOof$perf, perfInSample = fIn$perf)
 }

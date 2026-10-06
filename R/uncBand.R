@@ -182,11 +182,11 @@ uncRidgeSpecies <- function(cfg, sp) {
     seed <- if (b == 0) 42L else stableSeed(c("ridgeBoot", sp, b))
     info$seed[j] <- seed
     fit <- tryCatch(uncWithSeed(seed, {
-      if (b == 0) glmnet::cv.glmnet(x = X, y = y, family = "binomial", alpha = 0, nfolds = 10, standardize = TRUE)
+      if (b == 0) fitRidgeCv(X, y, nfolds = 10)
       else {
         ub <- unique(blk); nf <- min(10L, length(ub))
         foldOf <- stats::setNames(sample(rep_len(seq_len(nf), length(ub))), ub)
-        glmnet::cv.glmnet(x = X, y = y, family = "binomial", alpha = 0, foldid = unname(foldOf[blk]), standardize = TRUE)
+        fitRidgeCv(X, y, foldid = unname(foldOf[blk]))
       }
     }), error = function(e) { info$note[j] <<- conditionMessage(e); NULL })
     if (is.null(fit)) next

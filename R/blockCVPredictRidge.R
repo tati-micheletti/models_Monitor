@@ -21,9 +21,7 @@ blockCVPredictRidge <- function(X, y, foldID, innerNfolds = 5) {
     if (length(trainIdx) == 0 || length(testIdx) == 0) next
 
     set.seed(stableSeed(c("cvRidge", k, nrow(X), sum(y))))
-    cvFit <- glmnet::cv.glmnet(x = X[trainIdx, , drop = FALSE], y = y[trainIdx],
-                                family = "binomial", alpha = 0, nfolds = innerNfolds,
-                                standardize = TRUE)
+    cvFit <- fitRidgeCv(X[trainIdx, , drop = FALSE], y[trainIdx], nfolds = innerNfolds)
 
     cvPred[testIdx] <- as.vector(stats::predict(cvFit, newx = X[testIdx, , drop = FALSE],
                                                  s = cvFit$lambda.1se, type = "response"))
