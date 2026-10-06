@@ -1,10 +1,18 @@
 #' Predict a fitted BRT model onto a covariate raster stack
 #'
-#' Builds a prediction data.frame from `covStack`, predicts with
-#' `brtModel`, and rebuilds a full-extent raster (NA where covariates
+#' Predicts with `brtModel` for every cell of `covStack` whose predictors are
+#' all available, and rebuilds a full-extent raster (NA where covariates
 #' were incomplete) with `mean_prob` and a `binary` layer thresholded at
 #' `thresh`. Combined via `combineTwoLayerRaster()` to work around a terra
 #' stacking bug.
+#'
+#' The cells are processed in blocks of whole rows (`chunkCells` cells at a
+#' time), NOT as one giant data.frame: at 200 m the whole country is 14.85M
+#' cells x ~20 layers, and building that data.frame (plus its complete-case
+#' copy and gbm's own matrix) needed ~10 GB on top of the 2.5 GB covariate
+#' stack -- the EVE habitat array was killed for running out of memory.
+#' Blockwise prediction gives IDENTICAL values (a prediction depends only on
+#' its own row) with a small fraction of the memory.
 #'
 #' Reconstructs onto `covStack`'s own grid by directly assigning into a
 #' template layer's cell values (rather than gridding predicted points
@@ -26,24 +34,33 @@
 #' @param predictors Character vector of predictor column names.
 #' @param brtModel A fitted `gbm.step()` model.
 #' @param thresh Numeric. Binary classification threshold.
+#' @param chunkCells Integer. Approximate number of cells predicted at a time (whole rows).
 #' @return SpatRaster, two layers (`mean_prob`, `binary`).
-predictBRTToRaster <- function(covStack, predictors, brtModel, thresh) {
+predictBRTToRaster <- function(covStack, predictors, brtModel, thresh, chunkCells = 2e6) {
   rasterPredictors <- setdiff(predictors, c("x", "y"))
   predRast <- covStack[[rasterPredictors]]
-  # xy = TRUE supplies "x"/"y" columns (this raster's own cell coordinates,
-  # same CRS/grid as everything else) for free -- exactly matching how the
-  # training data's own x/y columns were extracted (terra::extract() from
-  # the same covariate stack), so no separate synthetic layer is needed.
-  predDf <- as.data.frame(predRast, xy = TRUE, na.rm = FALSE)
+  nr <- terra::nrow(predRast); nc <- terra::ncol(predRast)
+  rowsPerChunk <- max(1L, as.integer(floor(chunkCells / nc)))
+  # A file-backed stack (e.g. the habitat covariate cache) must be opened for the blockwise reads.
+  terra::readStart(predRast)
+  on.exit(terra::readStop(predRast), add = TRUE)
 
-  completeIdx <- stats::complete.cases(predDf[, predictors])
-  predDfComplete <- predDf[completeIdx, ]
-
-  predVals <- gbm::predict.gbm(brtModel, predDfComplete[, predictors],
-                                n.trees = brtModel$gbm.call$best.trees, type = "response")
-
-  predFull <- rep(NA_real_, nrow(predDf))
-  predFull[completeIdx] <- predVals
+  predFull <- rep(NA_real_, nr * nc)
+  for (r1 in seq(1L, nr, by = rowsPerChunk)) {
+    nRows <- min(rowsPerChunk, nr - r1 + 1L)
+    cellIds <- ((r1 - 1L) * nc + 1L):((r1 - 1L + nRows) * nc)
+    # "x"/"y" are this raster's own cell coordinates (same CRS/grid as everything else), exactly matching
+    # how the training data's own x/y columns were extracted (terra::extract() from the same covariate
+    # stack), so no separate synthetic layer is needed.
+    blockDf <- cbind(as.data.frame(terra::xyFromCell(predRast, cellIds)),
+                     terra::readValues(predRast, row = r1, nrows = nRows, dataframe = TRUE))
+    completeIdx <- stats::complete.cases(blockDf[, predictors, drop = FALSE])
+    if (any(completeIdx)) {
+      predFull[cellIds[completeIdx]] <- gbm::predict.gbm(
+        brtModel, blockDf[completeIdx, predictors, drop = FALSE],
+        n.trees = brtModel$gbm.call$best.trees, type = "response")
+    }
+  }
 
   rPred <- predRast[[1]]
   terra::values(rPred) <- predFull

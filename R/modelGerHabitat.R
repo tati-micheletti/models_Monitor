@@ -62,7 +62,15 @@ modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRo
     getStack <- function(yr) {
       key <- paste(resKey, yr)
       if (keepStacksInMemory && !is.null(stackCache[[key]])) return(stackCache[[key]])
-      s <- loadHabitatCovariates(yr, habitatOutputDir)
+      # Preferred: the year's stack as a FILE (written once by the uncertainty workflow's covcache step,
+      # <outputRoot>/uncertainty/covcache/<scale>/habitat_<year>.tif -- the same layers loadHabitatCovariates()
+      # returns). Reading it needs a few GB; building it in memory with loadHabitatCovariates() peaks at ~11.6 GB
+      # (measured) and killed the 20 GB cluster tasks.
+      cacheFile <- file.path(outputRoot, "uncertainty", "covcache", scaleLabel(resM), paste0("habitat_", yr, ".tif"))
+      s <- if (file.exists(cacheFile)) {
+        message("Habitat covariates for ", yr, ": reading the cached stack ", basename(cacheFile))
+        terra::rast(cacheFile)
+      } else loadHabitatCovariates(yr, habitatOutputDir)
       if (keepStacksInMemory) stackCache[[key]] <<- s
       s
     }
