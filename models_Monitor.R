@@ -305,7 +305,10 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           yearChunk = P(sim)$habitatYearChunk)
       }
 
-      if (!is.na(P(sim)$runScale) && checkAllScalesReady(
+      # In chunk mode (habitatYearChunk = c(i, n)) only the LAST chunk may start the meta-model: earlier chunks leave
+      # years from older runs on disk, so "all scales ready" can be TRUE while most years are still stale or missing.
+      lastHabitatChunk <- is.null(P(sim)$habitatYearChunk) || P(sim)$habitatYearChunk[1] == P(sim)$habitatYearChunk[2]
+      if (lastHabitatChunk && !is.na(P(sim)$runScale) && checkAllScalesReady(
             species = P(sim)$runSpecies, outputRoot = outputPath(sim),
             climateResolutionM = P(sim)$climateResolutionM,
             habitatResolutionM = resolveResolutionM(P(sim)$runSpecies, "habitat",
@@ -407,6 +410,18 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
         refRaster <- terra::rast(file.path(inputPath(sim), "predictors", "processed",
                                             habitatResLabel,
                                             paste0("solar_radiation_habitat_", habitatResLabel, ".tif")))
+        # The reference grid is the full-Europe DEM raster (738 million cells). Every map the meta-model writes lives on
+        # it and Cache() fingerprints it by reading its values, which needs far more memory than a cluster task has
+        # (the EVE meta-model tasks were killed there). Everything outside Germany is NA anyway, so crop it to the window
+        # the habitat predictions cover (same cells, same values, ~50x fewer).
+        habPredFiles <- list.files(file.path(outputPath(sim), scaleLabel(habitatResM)),
+                                   pattern = "_pred_habitat_[0-9]{4}[.]tif$", full.names = TRUE)
+        if (length(habPredFiles) > 0) {
+          refRaster <- terra::crop(refRaster, terra::ext(terra::rast(habPredFiles[1])), snap = "out")
+          message("Reference grid cropped to the Germany window: ", terra::ncell(refRaster), " cells")
+        } else {
+          warning("No habitat prediction found to crop the reference grid to -- using the full-Europe grid (needs a lot of memory).")
+        }
 
         resolutionsM <- c(europe = P(sim)$climateResolutionM,
                            habitat = P(sim)$habitatResolutionM,
