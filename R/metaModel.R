@@ -134,9 +134,10 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       chk <- if (file.exists(outCheck)) tryCatch(readRDS(outCheck), error = function(e) NULL) else NULL
       if (is.null(chk) || !identical(chk$ridgeSpec, "lower.limits=0")) {
         message("Out-of-fold inputs (fold models of the three scales)...")
+        # A failure here must STOP the task: silently falling back to in-sample weights would defeat the purpose.
         chk <- tryCatch({ r <- metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- "lower.limits=0"; saveRDS(r, outCheck); r },
-                        error = function(e) { warning("Out-of-fold inputs failed for ", sp, " (", conditionMessage(e),
-                                                      ") -- falling back to IN-SAMPLE weights, flagged as such."); NULL })
+                        error = function(e) stop("Out-of-fold inputs failed for ", sp, ": ", conditionMessage(e),
+                                                 " (set metaHonestEval = FALSE to run with in-sample weights on purpose).", call. = FALSE))
       }
       if (!is.null(chk)) {
         X <- chk$oof$X; y <- chk$oof$y; foldId <- chk$oof$foldID; trainBasis <- "out-of-fold inputs"

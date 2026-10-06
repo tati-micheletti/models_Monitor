@@ -245,3 +245,22 @@ uncNeighbourCells <- function(r, cells, reach = 2L) {
   }))
   sort(unique(unlist(out)))
 }
+
+#' Index of the nearest reference point for every query point (planar distance, plain R: no sf needed)
+#'
+#' Same result as `sf::st_nearest_feature()` for projected coordinates (EPSG:3035 metres); ties go to the first reference point.
+#' Chunked, so memory stays at a few hundred MB however many points there are.
+#'
+#' @param q Numeric matrix (n x 2), query x/y.
+#' @param ref Numeric matrix (m x 2), reference x/y.
+#' @return Integer vector of length n.
+uncNearestIdx <- function(q, ref, chunk = 500L) {
+  q <- as.matrix(q); ref <- as.matrix(ref)
+  out <- integer(nrow(q))
+  for (s in seq(1L, nrow(q), by = chunk)) {
+    i <- s:min(s + chunk - 1L, nrow(q))
+    d <- outer(q[i, 1], ref[, 1], "-")^2 + outer(q[i, 2], ref[, 2], "-")^2
+    out[i] <- max.col(-d, ties.method = "first")
+  }
+  out
+}

@@ -110,3 +110,13 @@ check("baseline year not mapped -> skipped without error", is.null(computeIndexU
 
 cat(if (ok) "\nALL UNIT TESTS PASSED\n" else "\nSOME UNIT TESTS FAILED\n")
 quit(status = if (ok) 0 else 1)
+
+# --- nearest neighbour without sf ----------------------------------------------------------------------------------
+set.seed(11); q <- cbind(runif(1300, 4e6, 4.6e6), runif(1300, 2.6e6, 3.6e6)); rf <- cbind(runif(900, 4e6, 4.6e6), runif(900, 2.6e6, 3.6e6))
+nn <- uncNearestIdx(q, rf, chunk = 400L)
+if (requireNamespace("sf", quietly = TRUE)) {
+  sfNN <- as.integer(sf::st_nearest_feature(sf::st_as_sf(data.frame(x = q[, 1], y = q[, 2]), coords = c("x", "y"), crs = 3035),
+                                            sf::st_as_sf(data.frame(x = rf[, 1], y = rf[, 2]), coords = c("x", "y"), crs = 3035)))
+  check("uncNearestIdx equals sf::st_nearest_feature", identical(nn, sfNN))
+}
+check("uncNearestIdx brute force", identical(nn[c(1, 700, 1300)], vapply(c(1, 700, 1300), function(i) which.min((rf[, 1] - q[i, 1])^2 + (rf[, 2] - q[i, 2])^2), 1L)))

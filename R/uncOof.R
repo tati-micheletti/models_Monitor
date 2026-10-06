@@ -19,9 +19,7 @@ uncOofContext <- function(cfg, sp) {
   rows <- which(hab$year %in% hy)
   xy <- cbind(hab$x[rows], hab$y[rows])
   nearestFold <- function(tbl) {
-    pts <- sf::st_as_sf(data.frame(x = xy[, 1], y = xy[, 2]), coords = c("x", "y"), crs = 3035)
-    ref <- sf::st_as_sf(data.frame(x = tbl$x, y = tbl$y), coords = c("x", "y"), crs = 3035)
-    tbl$foldID[as.integer(sf::st_nearest_feature(pts, ref))]
+    tbl$foldID[uncNearestIdx(xy, cbind(tbl$x, tbl$y))]
   }
   list(cfg = cfg, sp = sp, tabs = tabs, hab = hab, rows = rows, xy = xy, y = hab$occurrence[rows], yrs = hab$year[rows],
        foldOf = list(climate = nearestFold(tabs$climate), landscape = nearestFold(tabs$landscape), habitat = hab$foldID[rows]),

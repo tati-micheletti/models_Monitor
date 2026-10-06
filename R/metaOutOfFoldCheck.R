@@ -39,9 +39,7 @@ metaOutOfFoldCheck <- function(cfg, sp) {
 
   # fold of the nearest record of a scale's own table (stands in for "the block this location belongs to")
   nearestFold <- function(tbl) {
-    pts <- sf::st_as_sf(data.frame(x = xy[, 1], y = xy[, 2]), coords = c("x", "y"), crs = 3035)
-    ref <- sf::st_as_sf(data.frame(x = tbl$x, y = tbl$y), coords = c("x", "y"), crs = 3035)
-    tbl$foldID[as.integer(sf::st_nearest_feature(pts, ref))]
+    tbl$foldID[uncNearestIdx(xy, cbind(tbl$x, tbl$y))]
   }
   foldOf <- list(climate = nearestFold(tabs$climate), landscape = nearestFold(tabs$landscape))
 
