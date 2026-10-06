@@ -23,7 +23,9 @@
 # (submit that first; this array must run after it), and predictions are made block by block. Measured locally: ~2.6 GB
 # of process memory per year; 24G is deliberate head-room (the highmem nodes have ~1.5 TB, and the first runs died at very different times, so memory crept up). Building each year in memory instead (loadHabitatCovariates) peaks at ~11.6 GB and, because
 # the memory is not handed back promptly, killed the tasks at 13 GB and at 20 GB.
-#SBATCH --mem-per-cpu=24G
+# 12G, not more: a request above ~16G is routed to the small 'highmem' partition and can wait for hours. With the years
+# predicted in chunks of ~4 (see the loop below) a task stays well under 12G (sstat saw 5.9 GB after 8 years in one process).
+#SBATCH --mem-per-cpu=12G
 #SBATCH --time=12:00:00
 #SBATCH --output=logs/habitat_%A_%a.out
 #SBATCH --error=logs/habitat_%A_%a.err
