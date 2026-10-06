@@ -37,12 +37,16 @@
 #'   predicted and dropped right after. TRUE: all years' stacks stay in memory and are re-used across species. One year
 #'   at 200 m is ~2.5 GB (measured), so keeping 21 years needs ~50 GB -- far more than a cluster task has (the first EVE
 #'   habitat array died out of memory at 13 GB because of exactly this). Only worth it on a big local machine.
+#' @param yearChunk NULL (default): predict every year in this call. Otherwise `c(i, n)`: predict only the i-th of n
+#'   equal chunks of `predictionYears`. The cluster runs a species as n SEPARATE R processes (one chunk each) because, on
+#'   EVE, process memory kept growing from year to year until the task was killed even with 24 GB; a fresh process every
+#'   few years resets it. The model fit and its evaluation are cached, so each chunk starts quickly.
 #' @return Named list (by species) with `modelPath`, `perfPath`, `predictions`
 #'   (named by year), and `perf` (the evalSDM() row).
 modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRoot,
                              resolutionConfig = NULL, sharedResolutionM,
                              initialLR = 0.08, perSpeciesLR = NULL, cachePath = NULL,
-                             keepStacksInMemory = FALSE) {
+                             keepStacksInMemory = FALSE, yearChunk = NULL) {
 
   if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
   result <- list()
@@ -118,10 +122,17 @@ modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRo
     saveRDS(data.frame(species = sp, D2 = evalResult$explDev),
             file.path(outputDir, paste0(spClean, "_expl_dev_habitat.rds")))
 
-    message("Predicting onto German habitat grid for ", length(predictionYears), " years...")
+    yearsToDo <- predictionYears
+    if (!is.null(yearChunk)) {
+      nYears <- length(predictionYears); chunkSize <- ceiling(nYears / yearChunk[2])
+      first <- (yearChunk[1] - 1) * chunkSize + 1
+      yearsToDo <- if (first > nYears) integer(0) else predictionYears[first:min(nYears, yearChunk[1] * chunkSize)]
+      message("Chunk ", yearChunk[1], " of ", yearChunk[2], ": years ", if (length(yearsToDo)) paste(range(yearsToDo), collapse = "-") else "(none)")
+    }
+    message("Predicting onto German habitat grid for ", length(yearsToDo), " years...")
     spPredFiles <- list()
 
-    for (yr in predictionYears) {
+    for (yr in yearsToDo) {
       outTif <- file.path(outputDir, paste0(spClean, "_pred_habitat_", yr, ".tif"))
 
       covStack <- getStack(yr)

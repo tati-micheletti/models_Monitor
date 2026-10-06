@@ -50,8 +50,17 @@ export TMPDIR="/work/${USER}/birdMonitor/tmp/${SLURM_JOB_ID}"
 mkdir -p "${TMPDIR}"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
-Rscript tools/runClusterTask.R \
-  --scale habitat \
-  --index "${SLURM_ARRAY_TASK_ID}" \
-  --run-name "${BIRDMONITOR_RUNNAME:-test4}" \
-  --repo-root "${SLURM_SUBMIT_DIR}"
+# The years are predicted in NCHUNK separate R processes, one after the other: on EVE, process memory kept growing from
+# year to year (killed at 13 GB, then at 20 GB, then at 24 GB after ~2-3 h even with file-backed covariates), and a fresh
+# process resets it. The model fit and its evaluation are cached, so each chunk starts quickly. When the last chunk
+# finishes, the species' meta-model is triggered by the usual "all scales ready" check.
+NCHUNK="${HABITAT_NCHUNKS:-6}"
+for CHUNK in $(seq 1 "${NCHUNK}"); do
+  echo "=== habitat chunk ${CHUNK} of ${NCHUNK} ($(date +%H:%M:%S)) ==="
+  Rscript tools/runClusterTask.R \
+    --scale habitat \
+    --index "${SLURM_ARRAY_TASK_ID}" \
+    --run-name "${BIRDMONITOR_RUNNAME:-test4}" \
+    --repo-root "${SLURM_SUBMIT_DIR}" \
+    --year-chunk "${CHUNK}" --n-chunks "${NCHUNK}"
+done

@@ -137,6 +137,9 @@ defineModule(sim, list(
                     "Should modelGerLandscape be re-run even if sim$landscapeModels exists?"),
     defineParameter("rerunMetaModel", "logical", FALSE, NA, NA,
                     "Should metaModel be re-run even if sim$metaModels exists?"),
+    defineParameter("habitatYearChunk", "numeric", NULL, NA, NA,
+                    "NULL (default): the habitat step predicts every year in one process. c(i, n): predict only the i-th",
+                    "of n equal chunks of the prediction years (cluster tasks run n processes in a row, so memory resets)."),
     defineParameter("keepHabitatStacks", "logical", FALSE, NA, NA,
                     "FALSE (default): the 200 m habitat covariate stack is loaded one year at a time (~2.5 GB each).",
                     "TRUE: all years stay in memory and are shared across species (~50 GB; only for a big local machine)."),
@@ -298,7 +301,8 @@ doEvent.models_Monitor = function(sim, eventTime, eventType) {
           sharedResolutionM = P(sim)$habitatResolutionM,
           initialLR = P(sim)$habitatInitialLR,
           cachePath = cachePath(sim),
-          keepStacksInMemory = P(sim)$keepHabitatStacks)
+          keepStacksInMemory = P(sim)$keepHabitatStacks,
+          yearChunk = P(sim)$habitatYearChunk)
       }
 
       if (!is.na(P(sim)$runScale) && checkAllScalesReady(
