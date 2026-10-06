@@ -13,7 +13,7 @@ uncPreflight <- function(cfg) {
   for (sp in cfg$species) {
     res <- cfg$resOf(sp)
     for (sc in c("climate", "landscape", "habitat")) {
-      f1 <- file.path(cfg$inputRoot, "model_ready", scaleLabel(res[[sc]]), paste0(gsub(" ", "_", sp), "_inputs.rds"))
+      f1 <- file.path(uncModelReadyDir(cfg, sc), paste0(gsub(" ", "_", sp), "_inputs.rds"))
       if (!file.exists(f1)) add(sp, ": training table missing: ", f1)
       f2 <- file.path(uncMainDir(cfg, sp, sc), paste0(gsub(" ", "_", sp), "_BRT_", .uncModelSuffix[[sc]], ".rds"))
       if (!file.exists(f2)) add(sp, ": main BRT missing (baseline model array not finished?): ", f2)

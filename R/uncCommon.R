@@ -110,10 +110,19 @@ uncMainModel <- function(cfg, sp, scaleKey) {
   readRDS(f)
 }
 
+#' Folder of the model-ready training tables of one scale
+#'
+#' inputs_Monitor writes every species' table under the SHARED resolution of that scale (e.g. `scale_1` for landscape), even
+#' for a species with its own landscape resolution (Lanius collurio 700 m, Buteo buteo 5 km); only model OUTPUTS and
+#' covariates live in the per-species resolution folders.
+uncModelReadyDir <- function(cfg, scaleKey) {
+  shared <- c(climate = "europe", landscape = "landscape", habitat = "habitat")[[scaleKey]]
+  file.path(cfg$inputRoot, "model_ready", scaleLabel(cfg$sharedRes[[shared]]))
+}
+
 #' The model-ready training table of one species and scale (inputs_Monitor output)
 uncTrainingTable <- function(cfg, sp, scaleKey) {
-  f <- file.path(cfg$inputRoot, "model_ready", scaleLabel(cfg$resOf(sp)[[scaleKey]]),
-                 paste0(gsub(" ", "_", sp), "_inputs.rds"))
+  f <- file.path(uncModelReadyDir(cfg, scaleKey), paste0(gsub(" ", "_", sp), "_inputs.rds"))
   if (!file.exists(f)) stop("Training table missing: ", f)
   readRDS(f)
 }
