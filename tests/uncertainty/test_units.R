@@ -108,9 +108,6 @@ check("index series rises with the simulated +2%/yr trend", all(diff(cb$estimate
 check("interval files are written", all(file.exists(file.path(rd, c("species_index_uncertainty.csv", "combined_index_uncertainty.csv")), file.path(ud, "combined_index_replicates.csv"))))
 check("baseline year not mapped -> skipped without error", is.null(computeIndexUncertainty(c("Aa bb"), ud, rd, baselineYear = 1999, currentYear = 2009, nBands = 2)))
 
-cat(if (ok) "\nALL UNIT TESTS PASSED\n" else "\nSOME UNIT TESTS FAILED\n")
-quit(status = if (ok) 0 else 1)
-
 # --- nearest neighbour without sf ----------------------------------------------------------------------------------
 set.seed(11); q <- cbind(runif(1300, 4e6, 4.6e6), runif(1300, 2.6e6, 3.6e6)); rf <- cbind(runif(900, 4e6, 4.6e6), runif(900, 2.6e6, 3.6e6))
 nn <- uncNearestIdx(q, rf, chunk = 400L)
@@ -120,3 +117,6 @@ if (requireNamespace("sf", quietly = TRUE)) {
   check("uncNearestIdx equals sf::st_nearest_feature", identical(nn, sfNN))
 }
 check("uncNearestIdx brute force", identical(nn[c(1, 700, 1300)], vapply(c(1, 700, 1300), function(i) which.min((rf[, 1] - q[i, 1])^2 + (rf[, 2] - q[i, 2])^2), 1L)))
+
+cat(if (ok) "\nALL UNIT TESTS PASSED\n" else "\nSOME UNIT TESTS FAILED\n")
+quit(status = if (ok) 0 else 1)
