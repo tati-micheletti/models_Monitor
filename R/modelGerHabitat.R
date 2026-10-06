@@ -101,7 +101,11 @@ modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRo
               "absent from habitat-scale results until its data issue is fixed.")
       next
     }
-    persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_habitat")
+    # In chunk mode only the LAST chunk saves the converged learning rate: every chunk must start from the same value,
+    # otherwise the Cache() key of the fit changes between chunks and chunk 2 would refit a slightly different model.
+    if (is.null(yearChunk) || yearChunk[1] == yearChunk[2]) {
+      persistConvergedLR(brtM, spClean, lrStateDir = outputDir, lrStateSuffix = "_habitat")
+    }
     saveRDS(brtM, outModel)
     message("Model saved -> ", outModel)
 
