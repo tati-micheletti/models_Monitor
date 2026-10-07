@@ -137,10 +137,11 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     # block), then applied to the main models' maps -- stacked generalization (Wolpert 1992; Breiman 1996).
     if (!is.null(honestCfg)) {
       chk <- if (file.exists(outCheck)) tryCatch(readRDS(outCheck), error = function(e) NULL) else NULL
-      if (is.null(chk) || !identical(chk$ridgeSpec, "lower.limits=0")) {
+      climStamp <- metaClimateStamp(honestCfg, sp)
+      if (is.null(chk) || !identical(chk$ridgeSpec, "lower.limits=0") || !identical(chk$climStamp, climStamp)) {
         message("Out-of-fold inputs (fold models of the three scales)...")
         # A failure here must STOP the task: silently falling back to in-sample weights would defeat the purpose.
-        chk <- tryCatch({ r <- if (scaleSource != "brt") metaOutOfFoldEnsemble(honestCfg, sp, scaleSource) else metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- "lower.limits=0"; saveRDS(r, outCheck); r },
+        chk <- tryCatch({ r <- if (scaleSource != "brt") metaOutOfFoldEnsemble(honestCfg, sp, scaleSource) else metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- "lower.limits=0"; r$climStamp <- climStamp; saveRDS(r, outCheck); r },
                         error = function(e) stop("Out-of-fold inputs failed for ", sp, ": ", conditionMessage(e),
                                                  " (set metaHonestEval = FALSE to run with in-sample weights on purpose).", call. = FALSE))
       }

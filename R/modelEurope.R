@@ -115,6 +115,7 @@ modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
       predRaster <- reproducible::Cache(
         predictBRTToRaster, covStack = bioclimYr, predictors = predSel, brtModel = brtM,
         thresh = brtPerf$thresh, cachePath = cachePath,
+        .cacheExtra = unname(tools::md5sum(pf$path)),   # a rebuilt climatology must never hit the cache of the old one
         userTags = c("modelEurope", "predict", spClean, as.character(pf$year)))
       terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", pf$year, ": saved -> ", basename(outTif))

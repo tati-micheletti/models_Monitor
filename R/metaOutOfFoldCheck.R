@@ -112,3 +112,13 @@ metaOutOfFoldCheck <- function(cfg, sp) {
        perfOutOfFold = fOof$perf, perfInSample = fIn$perf,
        oof = list(X = fOof$X, y = fOof$y, foldID = fOof$fold))
 }
+
+#' Fingerprint of the climate windows the out-of-fold check reads (habitat years of the species)
+#'
+#' Saved with the check; a check made from different climate files (e.g. before the 2026-10-07 climate fix) is never reused.
+metaClimateStamp <- function(cfg, sp) {
+  lab <- scaleLabel(cfg$resOf(sp)[["climate"]])
+  f <- file.path(cfg$inputRoot, "predictors", "processed", lab,
+                 paste0("bioclim_", cfg$habitatYearsOf(sp) - (cfg$climateWindowLength - 1), "-", cfg$habitatYearsOf(sp), "_", lab, ".tif"))
+  paste(unname(tools::md5sum(f)), collapse = "|")
+}
