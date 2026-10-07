@@ -135,9 +135,12 @@ uncCoarseSpecies <- function(cfg, sp) {
     procDir <- file.path(cfg$inputRoot, "predictors", "processed", lab)
     for (yr in years) {
       f <- file.path(outDir, sprintf("%s_%d.tif", scaleKey, yr))
-      if (file.exists(f) && tryCatch(terra::nlyr(terra::rast(f)) == length(mod$ids), error = function(e) FALSE)) next
+      bf <- if (scaleKey == "climate") file.path(procDir, paste0("bioclim_", yr - (cfg$climateWindowLength - 1), "-", yr, "_", lab, ".tif")) else NA_character_
+      # A prediction file is reused only if it is complete AND not older than the climatology it was made from (the 2022-2025
+      # climatologies were rebuilt on 2026-10-07 after a data bug; an older prediction must never be kept).
+      fresh <- is.na(bf) || !file.exists(bf) || file.mtime(f) >= file.mtime(bf)
+      if (file.exists(f) && fresh && tryCatch(terra::nlyr(terra::rast(f)) == length(mod$ids), error = function(e) FALSE)) next
       cov <- if (scaleKey == "climate") {
-        bf <- file.path(procDir, paste0("bioclim_", yr - (cfg$climateWindowLength - 1), "-", yr, "_", lab, ".tif"))
         if (!file.exists(bf)) { message(scaleKey, " ", yr, ": climatology missing -- skipping"); next }
         terra::rast(bf)
       } else {
