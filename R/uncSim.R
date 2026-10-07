@@ -19,7 +19,8 @@ uncCfgFromSim <- function(sim) {
     reps = p$uncertaintyReps, outYears = p$uncertaintyYears, nBands = p$uncertaintyBands,
     repBatch = p$uncertaintyRepBatch, cores = p$uncertaintyCores, blockMult = p$uncertaintyBlockMult,
     probs = p$uncertaintyProbs, tag = p$uncertaintyTag, baselineYear = p$uncertaintyBaselineYear,
-    currentYear = p$uncertaintyCurrentYear, codeRoot = getwd())
+    currentYear = p$uncertaintyCurrentYear, codeRoot = getwd(),
+    members = if (all(is.na(p$uncertaintyMembers))) NULL else p$uncertaintyMembers)
 }
 
 #' Handle one uncertainty event

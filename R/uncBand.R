@@ -55,7 +55,7 @@ uncBandSuitability <- function(cfg, sp, ctx, year, template, pos, ptsXY = NULL) 
   keep <- if (is.null(ptsXY)) NULL else uncNeighbourCells(covWin, terra::cellFromXY(covWin, ptsXY), reach = 2L)
   cells <- uncCells(covWin, mod$predSel, keepCells = keep)
   vals <- matrix(NA_real_, terra::ncell(covWin), nRep)
-  if (nrow(cells$df) > 0) vals[cells$idx, ] <- uncPredictMany(mod$models[pos], cells$df, mod$nTrees, cfg$cores)
+  if (nrow(cells$df) > 0) vals[cells$idx, ] <- uncPredictScale(cfg, sp, "habitat", mod, pos, cells$df)
   hr <- terra::rast(covWin[[1]], nlyrs = nRep); terra::values(hr) <- vals
   out$hab <- terra::values(terra::resample(hr, template, method = "bilinear"), mat = TRUE)
   out

@@ -60,7 +60,13 @@ uncGitInfo <- function(repoRoot) {   # repoRoot = cfg$codeRoot
 uncCfgFromParams <- function(inputRoot, outputRoot, species, predictionYears, habitatYears, resolutionConfig = NULL,
                              climateResolutionM, habitatResolutionM, landscapeResolutionM, climateWindowLength,
                              reps, outYears = NULL, nBands = 16L, repBatch = 10L, cores = 1L, blockMult = 1,
-                             probs = c(0.05, 0.95), tag = "", baselineYear = 2005L, currentYear = NULL, codeRoot = getwd()) {
+                             probs = c(0.05, 0.95), tag = "", baselineYear = 2005L, currentYear = NULL, codeRoot = getwd(), members = NULL) {
+  # members: NULL = the BRT-only workflow (default, unchanged). Otherwise the names of the models averaged in every replicate's scale
+  # prediction (subset of ALGO_MEMBERS, e.g. c("brt","glm","gam","rf") = the ensemble "ens"); the run then defaults to tag ensTag(members).
+  if (!is.null(members) && length(members) && !all(is.na(members))) {
+    members <- ALGO_MEMBERS[ALGO_MEMBERS %in% members]
+    if (is.null(tag) || is.na(tag) || !nzchar(tag)) tag <- ensTag(members)
+  } else members <- NULL
   hyOf <- function(sp) if (is.list(habitatYears)) habitatYears[[sp]] else habitatYears
   allHy <- unlist(if (is.list(habitatYears)) habitatYears else list(habitatYears), use.names = FALSE)
   if (.Platform$OS.type == "windows") cores <- 1L
@@ -68,6 +74,7 @@ uncCfgFromParams <- function(inputRoot, outputRoot, species, predictionYears, ha
     inputRoot = normalizePath(inputRoot, winslash = "/", mustWork = FALSE),
     outputRoot = normalizePath(outputRoot, winslash = "/", mustWork = FALSE),
     codeRoot = codeRoot, tag = if (is.null(tag) || is.na(tag)) "" else tag,
+    members = members, fitMembers = setdiff(members, "brt"),
     species = species,
     outYears = if (is.null(outYears)) predictionYears else outYears,
     predictionYears = predictionYears,
@@ -263,4 +270,43 @@ uncNearestIdx <- function(q, ref, chunk = 500L) {
     out[i] <- max.col(-d, ties.method = "first")
   }
   out
+}
+
+# ---- ensemble members inside the replicates --------------------------------------------------------------------------
+
+.uncMemberCache <- new.env(parent = emptyenv())
+
+#' The replicate fits of one non-BRT member at one scale (models/<scale>_<member>_<run>.rds), cached per process
+uncMemberFits <- function(cfg, sp, scale, member) {
+  f <- file.path(uncSpDir(cfg, sp, "models"), paste0(scale, "_", member, "_", cfg$repLabel, ".rds"))
+  if (is.null(.uncMemberCache[[f]])) {
+    if (!file.exists(f)) stop("Replicate fits of member '", member, "' missing: ", f, " (run the 'fit' step with the members set)")
+    .uncMemberCache[[f]] <- readRDS(f)
+  }
+  .uncMemberCache[[f]]
+}
+
+#' Predict a list of algorithm fits on one data.frame -> matrix rows x fits
+uncPredictFits <- function(fits, df, cores = 1L) {
+  one <- function(ft) algoPredict(ft, df)
+  res <- if (cores > 1L && length(fits) > 1L) parallel::mclapply(fits, one, mc.cores = min(cores, length(fits))) else lapply(fits, one)
+  bad <- vapply(res, function(r) inherits(r, "try-error") || is.null(r), logical(1))
+  if (any(bad)) stop("uncPredictFits(): prediction failed in ", sum(bad), " of ", length(fits), " fits.")
+  do.call(cbind, res)
+}
+
+#' Scale prediction of the replicates `pos`: the BRT alone (default) or the MEAN of the run's members
+#'
+#' @param mod The BRT bundle of the scale (`models/<scale>_<run>.rds`).
+#' @return Matrix rows of `df` x replicates `pos`. With `cfg$members` NULL this is exactly `uncPredictMany()` of the BRTs.
+uncPredictScale <- function(cfg, sp, scale, mod, pos, df) {
+  useBrt <- is.null(cfg$members) || "brt" %in% cfg$members
+  parts <- list()
+  if (useBrt) parts$brt <- uncPredictMany(mod$models[pos], df, mod$nTrees, cfg$cores)
+  for (m in cfg$fitMembers) {
+    mf <- uncMemberFits(cfg, sp, scale, m)
+    if (!identical(as.integer(mf$ids), as.integer(mod$ids))) stop("Replicate ids of member '", m, "' differ from the BRT's at scale ", scale)
+    parts[[m]] <- uncPredictFits(mf$fits[pos], df, cfg$cores)
+  }
+  if (length(parts) == 1L) parts[[1]] else Reduce(`+`, parts) / length(parts)
 }

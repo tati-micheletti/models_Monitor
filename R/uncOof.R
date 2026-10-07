@@ -99,20 +99,43 @@ uncOofSpecies <- function(cfg, sp, minPerClass = 10) {
       if (!file.exists(f)) stop("Fold models of the main BRT missing: ", f)
       readRDS(f)
     }
+    useBrt <- is.null(cfg$members) || "brt" %in% cfg$members
+    # non-BRT members (ensemble run): main fit of each member; replicate 0 uses its baseline out-of-fold file, so it equals the baseline ensemble
+    mainFits <- setNames(lapply(cfg$fitMembers, function(m) { x <- readRDS(ensFile(cfg, sp, scale, m, "model")); x$threads <- 1L; x }), cfg$fitMembers)
+    mainOof <- setNames(lapply(cfg$fitMembers, function(m) readRDS(ensFile(cfg, sp, scale, m, "oofhab"))), cfg$fitMembers)
     t0 <- Sys.time()
+    enoughClasses <- function(tr) sum(tbl$occurrence[tr] == 1) >= minPerClass && sum(tbl$occurrence[tr] == 0) >= minPerClass
     oneRep <- function(j) {
-      b <- ids[j]; v <- rep(NA_real_, length(ctx$rows))
-      for (k in folds) {
-        m <- if (b == 0) mainFolds[[as.character(k)]] else {
-          tr <- mod$draws[[j]]; tr <- tr[fold[tr] != k]
-          if (sum(tbl$occurrence[tr] == 1) < minPerClass || sum(tbl$occurrence[tr] == 0) < minPerClass) NULL
-          else uncWithSeed(stableSeed(c("oofFit", sp, scale, b, k)), uncFitBRT(tbl, mod$predSel, brtM, tr))
+      b <- ids[j]
+      vB <- NULL
+      if (useBrt) {
+        vB <- rep(NA_real_, length(ctx$rows))
+        for (k in folds) {
+          m <- if (b == 0) mainFolds[[as.character(k)]] else {
+            tr <- mod$draws[[j]]; tr <- tr[fold[tr] != k]
+            if (!enoughClasses(tr)) NULL
+            else uncWithSeed(stableSeed(c("oofFit", sp, scale, b, k)), uncFitBRT(tbl, mod$predSel, brtM, tr))
+          }
+          if (is.null(m)) next
+          p <- uncOofPredictFold(ctx, scale, m, mod$predSel, k)
+          vB[p$pos] <- p$value
         }
-        if (is.null(m)) next
-        p <- uncOofPredictFold(ctx, scale, m, mod$predSel, k)
-        v[p$pos] <- p$value
       }
-      v
+      parts <- if (is.null(vB)) list() else list(brt = vB)
+      for (mm in cfg$fitMembers) {
+        if (b == 0) { parts[[mm]] <- mainOof[[mm]]; next }
+        vM <- rep(NA_real_, length(ctx$rows))
+        for (k in folds) {
+          tr <- mod$draws[[j]]; tr <- tr[fold[tr] != k]
+          if (!enoughClasses(tr)) next
+          fk <- tryCatch(algoRefit(mainFits[[mm]], tbl[tr, , drop = FALSE], seed = stableSeed(c("oofFitMember", sp, scale, mm, b, k))), error = function(e) NULL)
+          if (is.null(fk)) next
+          p <- uncOofPredictFold(ctx, scale, NULL, mod$predSel, k, predictFun = function(df) algoPredict(fk, df))
+          vM[p$pos] <- p$value
+        }
+        parts[[mm]] <- vM
+      }
+      if (length(parts) == 1L) parts[[1]] else algoEnsembleMean(parts)
     }
     # warm the (replicate-independent) covariate/cell cache once, so forked workers do not each rebuild it
     if (scale != "habitat") for (k in folds) { pos <- which(ctx$foldOf[[scale]] == k)

@@ -18,5 +18,6 @@ testCfg <- function(repoRoot = getwd()) {
     climateWindowLength = env$sharedClimateWindowLength, reps = rng(ev("BIRDMONITOR_UNC_REPS", "0:50")), outYears = yrs,
     nBands = as.integer(ev("BIRDMONITOR_UNC_BANDS", "16")), repBatch = as.integer(ev("BIRDMONITOR_UNC_REPBATCH", "10")),
     blockMult = as.numeric(ev("BIRDMONITOR_UNC_BLOCKMULT", "1")), tag = ev("BIRDMONITOR_UNC_TAG", ""),
-    baselineYear = as.integer(ev("BIRDMONITOR_UNC_BASELINE", "2005")), codeRoot = repoRoot)
+    baselineYear = as.integer(ev("BIRDMONITOR_UNC_BASELINE", "2005")), codeRoot = repoRoot,
+    members = if (nzchar(ev("BIRDMONITOR_UNC_MEMBERS"))) strsplit(ev("BIRDMONITOR_UNC_MEMBERS"), ",")[[1]] else NULL)
 }

@@ -88,6 +88,7 @@ uncFitSpecies <- function(cfg, sp) {
                        append = file.exists(logFile), qmethod = "double")
     message("Replicate log -> ", logFile)
   }
+  if (length(cfg$fitMembers)) uncFitMembers(cfg, sp)
   infoFile <- file.path(uncSpDir(cfg, sp), paste0("run_info_", cfg$repLabel, ".txt"))
   if (!file.exists(infoFile)) writeLines(c(paste("git:", git), capture.output(print(utils::sessionInfo()))), infoFile)
   invisible(TRUE)
@@ -151,12 +152,42 @@ uncCoarseSpecies <- function(cfg, sp) {
       missingPreds <- setdiff(mod$predSel, c(names(cov), "x", "y"))
       if (length(missingPreds)) { warning(scaleKey, " ", yr, ": missing predictors ", paste(missingPreds, collapse = ", ")); next }
       cells <- uncCells(cov, mod$predSel)
-      P <- uncPredictMany(mod$models, cells$df, mod$nTrees, cfg$cores)
+      P <- uncPredictScale(cfg, sp, scaleKey, mod, seq_along(mod$ids), cells$df)
       vals <- matrix(NA_real_, terra::ncell(cov), ncol(P)); vals[cells$idx, ] <- P
       r <- terra::rast(cov[[1]], nlyrs = ncol(P)); terra::values(r) <- vals
       names(r) <- paste0("rep_", mod$ids)
       terra::writeRaster(r, f, datatype = "FLT4S", overwrite = TRUE, gdal = c("COMPRESS=DEFLATE", "PREDICTOR=3"))
       message(scaleKey, " ", yr, ": ", length(mod$ids), " replicates -> ", basename(f))
+    }
+  }
+  invisible(TRUE)
+}
+
+#' Fit the replicates of the non-BRT members (`cfg$fitMembers`) on the SAME bootstrap draws as the BRT replicates
+#'
+#' Per scale and member: the member's main fit (`algoScaleRun()`'s model file) is refitted on the rows of each replicate's draw, with its
+#' own formula/settings fixed (`algoRefit()`); replicate 0 is the main fit itself. Writes `models/<scale>_<member>_<run>.rds`.
+uncFitMembers <- function(cfg, sp) {
+  outDir <- uncSpDir(cfg, sp, "models")
+  for (scaleKey in c("climate", "landscape", "habitat")) {
+    base <- file.path(outDir, paste0(scaleKey, "_", cfg$repLabel, ".rds"))
+    if (!file.exists(base)) stop("BRT replicate fits missing: ", base)
+    draws <- readRDS(base)$draws
+    spPa <- uncTrainingTable(cfg, sp, scaleKey)
+    for (m in cfg$fitMembers) {
+      f <- file.path(outDir, paste0(scaleKey, "_", m, "_", cfg$repLabel, ".rds"))
+      if (file.exists(f)) { message(scaleKey, " / ", m, ": ", basename(f), " exists -- skipping"); next }
+      main <- readRDS(ensFile(cfg, sp, scaleKey, m, "model"))
+      main$threads <- 1L
+      t0 <- Sys.time()
+      one <- function(j) { b <- cfg$reps[j]
+        if (b == 0) main else algoRefit(main, spPa[draws[[j]], , drop = FALSE], seed = stableSeed(c("bootMember", sp, scaleKey, m, b))) }
+      fits <- if (cfg$cores > 1L) parallel::mclapply(seq_along(cfg$reps), one, mc.cores = min(cfg$cores, length(cfg$reps))) else lapply(seq_along(cfg$reps), one)
+      bad <- vapply(fits, function(x) !is.list(x) || is.null(x$model), logical(1))
+      if (any(bad)) stop(scaleKey, " / ", m, ": ", sum(bad), " replicate fit(s) failed, e.g. replicate ", cfg$reps[which(bad)[1]])
+      uncSaveRDS(list(ids = cfg$reps, fits = fits, predSel = main$predSel, member = m, scaleKey = scaleKey), f)
+      message(scaleKey, " / ", m, ": ", length(fits), " replicate fits in ", round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min -> ", basename(f),
+              " (", round(file.size(f) / 1e6), " MB)")
     }
   }
   invisible(TRUE)

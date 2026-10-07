@@ -225,7 +225,8 @@ uncAreaMeans <- function(cfg, sp) {
 uncParityCheck <- function(cfg, sp, kMid = ceiling(cfg$nBands / 2)) {
   spClean <- gsub(" ", "_", sp)
   yr <- if (cfg$currentYear %in% cfg$outYears) cfg$currentYear else max(cfg$outYears)
-  f <- file.path(cfg$outputRoot, metamodelLabel(cfg$sharedRes), sprintf("%s_meta_suitability_%d.tif", spClean, yr))
+  f <- file.path(cfg$outputRoot, paste0(metamodelLabel(cfg$sharedRes), if (!is.null(cfg$members)) paste0("_", ensTag(cfg$members)) else ""),
+                 sprintf("%s_meta_suitability_%d.tif", spClean, yr))
   p <- uncReadBandYear(cfg, sp, yr, kMid, includeZero = TRUE)
   if (!file.exists(f) || is.null(p) || !(0 %in% p$ids)) {
     message(sp, ": parity check skipped (needs replicate 0, band ", kMid, " of year ", yr, " and the baseline file ", basename(f), ")")
