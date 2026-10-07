@@ -58,4 +58,5 @@ Rscript tools/runClusterTask.R \
   --scale meta \
   --index "${SLURM_ARRAY_TASK_ID}" \
   --run-name "${BIRDMONITOR_RUNNAME:-test4}" \
-  --repo-root "${SLURM_SUBMIT_DIR}"
+  --repo-root "${SLURM_SUBMIT_DIR}" \
+  --meta-source "${BIRDMONITOR_META_SOURCE:-brt}"

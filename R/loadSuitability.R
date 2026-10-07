@@ -16,7 +16,13 @@
 #' @return SpatRaster (one layer, named `<scale>_mean_prob`), or NULL if
 #'   the source prediction file doesn't exist.
 loadSuitability <- function(scale, spClean, year, modelDirs, refRaster) {
-  f <- switch(scale,
+  # option set by metaModel(scaleSource = ): "brt" = the BRT maps (default), otherwise the name of an ensemble made by ensembleScaleRun()
+  # ("ens", "ens_brt-gam", ...; see ensTag())
+  src <- getOption("birdMonitor.scaleSource", "brt")
+  f <- if (!identical(src, "brt")) {
+    file.path(switch(scale, climate = modelDirs$europe, landscape = modelDirs$landscape, habitat = modelDirs$habitat),
+              paste0(spClean, "_pred_", src, "_", scale, "_", year, ".tif"))
+  } else switch(scale,
               climate = file.path(modelDirs$europe, paste0(spClean, "_pred_EU_", year, ".tif")),
               landscape = file.path(modelDirs$landscape, paste0(spClean, "_pred_landscape_", year, ".tif")),
               habitat = file.path(modelDirs$habitat, paste0(spClean, "_pred_habitat_", year, ".tif")))

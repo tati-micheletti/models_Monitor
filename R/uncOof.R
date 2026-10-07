@@ -53,20 +53,23 @@ uncOofCells <- function(ctx, scale, yr, k, predSel, pos) {
 
 #' Predict the habitat records of fold `k` (positions in `ctx$rows`) with one fold model of one scale
 #'
+#' @param predictFun NULL (the model is a `gbm`) or a function(data.frame) -> probabilities, which is used INSTEAD of the gbm
+#'   prediction (GLM/GAM/random-forest fold models of the ensemble: `function(df) algoPredict(foldFit, df)`).
 #' @return List: `pos` (positions in `ctx$rows`) and `value` (predicted probability).
-uncOofPredictFold <- function(ctx, scale, model, predSel, k) {
+uncOofPredictFold <- function(ctx, scale, model, predSel, k, predictFun = NULL) {
   pos <- which(ctx$foldOf[[scale]] == k)
   if (!length(pos)) return(list(pos = integer(0), value = numeric(0)))
-  nt <- uncOofNTrees(model)
+  nt <- if (is.null(predictFun)) uncOofNTrees(model) else NA
+  predictRows <- function(df) if (is.null(predictFun)) gbm::predict.gbm(model, df, n.trees = nt, type = "response") else predictFun(df)
   if (scale == "habitat") {
-    return(list(pos = pos, value = gbm::predict.gbm(model, ctx$hab[ctx$rows[pos], predSel, drop = FALSE], n.trees = nt, type = "response")))
+    return(list(pos = pos, value = predictRows(ctx$hab[ctx$rows[pos], predSel, drop = FALSE])))
   }
   value <- rep(NA_real_, length(pos))
   for (yr in unique(ctx$yrs[pos])) {
     pp <- pos[ctx$yrs[pos] == yr]
     cc <- uncOofCells(ctx, scale, yr, k, predSel, pp)
     r <- terra::rast(cc$cov[[1]]); v <- rep(NA_real_, terra::ncell(r))
-    v[cc$cells$idx] <- gbm::predict.gbm(model, cc$cells$df, n.trees = nt, type = "response")
+    v[cc$cells$idx] <- predictRows(cc$cells$df)
     terra::values(r) <- v
     value[match(pp, pos)] <- terra::extract(r, ctx$xy[pp, , drop = FALSE], method = "bilinear")[, 1]
   }

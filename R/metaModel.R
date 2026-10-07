@@ -45,6 +45,9 @@
 #'   refitting from scratch every run -- matching `modelGerHabitat()`/
 #'   `modelGerLandscape()`/`modelEurope()`'s own convention. NULL falls
 #'   back to a temp directory, for standalone/test calls.
+#' @param scaleSource "brt" (default): combine the BRT map of each scale; or the name of an ensemble ("ens", "ens_brt-gam", ... = `ensTag()`):
+#'   combine the ENSEMBLE map of each scale (`ensembleScaleRun()`), with honest weights from `metaOutOfFoldEnsemble()`. Give each ensemble
+#'   its own `outputDir` (`<metamodel label>_<scaleSource>`) so the versions can live side by side.
 #' @param honestCfg Configuration from `uncCfgFromParams()`, or NULL. If given, the reported accuracy
 #'   (`<species>_perf_meta.rds`) is computed on OUT-OF-FOLD scale predictions (`metaOutOfFoldCheck()`), the way Wiedenroth
 #'   et al. validate their meta-model. Given, the ridge WEIGHTS are trained on those out-of-fold inputs too (stacked
@@ -56,7 +59,9 @@
 #'   `trendBootPath`/`trendBoot`.
 metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, modelDirs,
                        refRaster, outputDir, nBootTrend = 0, gadmCacheDir = NULL,
-                       cachePath = NULL, honestCfg = NULL) {
+                       cachePath = NULL, honestCfg = NULL, scaleSource = "brt") {
+  stopifnot(scaleSource == "brt" || startsWith(scaleSource, "ens"))
+  oldOpt <- options(birdMonitor.scaleSource = scaleSource); on.exit(options(oldOpt), add = TRUE)
 
   if (is.null(cachePath)) cachePath <- file.path(tempdir(), "birdMonitor_cache")
   dir.create(outputDir, recursive = TRUE, showWarnings = FALSE)
@@ -135,7 +140,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
       if (is.null(chk) || !identical(chk$ridgeSpec, "lower.limits=0")) {
         message("Out-of-fold inputs (fold models of the three scales)...")
         # A failure here must STOP the task: silently falling back to in-sample weights would defeat the purpose.
-        chk <- tryCatch({ r <- metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- "lower.limits=0"; saveRDS(r, outCheck); r },
+        chk <- tryCatch({ r <- if (scaleSource != "brt") metaOutOfFoldEnsemble(honestCfg, sp, scaleSource) else metaOutOfFoldCheck(honestCfg, sp); r$ridgeSpec <- "lower.limits=0"; saveRDS(r, outCheck); r },
                         error = function(e) stop("Out-of-fold inputs failed for ", sp, ": ", conditionMessage(e),
                                                  " (set metaHonestEval = FALSE to run with in-sample weights on purpose).", call. = FALSE))
       }
@@ -182,7 +187,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
     message("  (for comparison, in-sample inputs: AUC = ", round(metaPerfIn$AUC, 3), ")")
 
     # Maps written with DIFFERENT weights must never be reused: remember which ridge they came from.
-    ridgeId <- paste(c(trainBasis, signif(as.vector(coefs), 8)), collapse = "|")
+    ridgeId <- paste(c(scaleSource, trainBasis, signif(as.vector(coefs), 8)), collapse = "|")
     ridgeIdFile <- file.path(outputDir, paste0(spClean, "_meta_ridgeid.txt"))
     mapsCurrent <- file.exists(ridgeIdFile) && identical(readLines(ridgeIdFile, warn = FALSE)[1], ridgeId)
     if (!mapsCurrent) message("The ridge weights differ from those of the existing maps (or none exist): every year is rebuilt.")
