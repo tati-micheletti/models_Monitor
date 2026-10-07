@@ -2,7 +2,7 @@
 #   Rscript modules/models_Monitor/tests/ensemble/test_algos.R [scale: climate|landscape|habitat, default climate]
 args <- commandArgs(trailingOnly = TRUE); scale <- if (length(args)) args[1] else "climate"
 Sys.setenv(BIRDMONITOR_RUNNAME = "utest", BIRDMONITOR_SPECIES = "Alauda arvensis", BIRDMONITOR_UNC_REPS = "0:3")
-suppressMessages({library(terra); library(gbm); library(glmnet); library(randomForest); library(mgcv)})
+suppressMessages({library(terra); library(gbm); library(glmnet); library(ranger); library(mgcv)})
 source("modules/models_Monitor/tests/uncertainty/helper.R")
 cfg <- testCfg(); sp <- cfg$species
 d <- uncTrainingTable(cfg, sp, scale); brt <- uncMainModel(cfg, sp, scale); predSel <- brt$var.names

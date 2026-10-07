@@ -6,8 +6,11 @@
 #'         selected model does not converge, terms are dropped from the end until it does.
 #'   gam : `mgcv::gam`, binomial, one smooth `s(x, k = 4)` per predictor; if the fit errors (too few distinct values in a
 #'         predictor), the predictor with the fewest non-zero values is dropped and the fit retried.
-#'   rf  : `randomForest` on the 0/1 response (regression forest, i.e. the predicted probability is the forest mean),
-#'         1000 trees.
+#'   rf  : random forest on the 0/1 response, grown as a REGRESSION forest (the predicted probability is the forest mean), 1000
+#'         trees. Wiedenroth et al. use `randomForest::randomForest()`; here `ranger::ranger()` does the same job several times
+#'         faster and can use several cores (a deliberate, documented deviation, decided 2026-10-07). The defaults that matter
+#'         are matched to `randomForest`'s regression defaults: `mtry = max(floor(p/3), 1)`, `min.node.size = 5`, bootstrap
+#'         sampling with replacement. Results differ from `randomForest` only by random-number noise.
 #' Every fitted model is returned as a small list (`algo`, `model`, `formula`, `predSel` = the predictors actually used) so the
 #' rest of the pipeline treats the algorithms alike: `algoPredict()`, `algoRefit()` (same specification, new data: used for
 #' block cross-validation and bootstrap replicates) and `blockCVPredictAlgo()`.
@@ -19,15 +22,16 @@
 #' @param predSel Character. Candidate predictors.
 #' @param response Character. Response column (default "occurrence").
 #' @param ntree Integer. Trees of the random forest.
+#' @param threads Integer. Threads used by the random forest (fit and prediction).
 #' @param seed Integer or NULL. Set before fitting (random forest, bagging).
 #' @return List: `algo`, `model`, `formula`, `predSel` (predictors the final model uses), `response`, `ntree`, `note`.
-algoFit <- function(algo, data, predSel, response = "occurrence", ntree = 1000L, seed = NULL) {
+algoFit <- function(algo, data, predSel, response = "occurrence", ntree = 1000L, seed = NULL, threads = 1L) {
   algo <- match.arg(algo, c("glm", "gam", "rf"))
   if (!is.null(seed)) set.seed(seed)
   switch(algo,
     glm = algoFitGLM(data, predSel, response),
     gam = algoFitGAM(data, predSel, response),
-    rf  = algoFitRF(data, predSel, response, ntree))
+    rf  = algoFitRF(data, predSel, response, ntree, seed, threads))
 }
 
 algoFitGLM <- function(data, predSel, response) {
@@ -65,10 +69,11 @@ algoFitGAM <- function(data, predSel, response) {
   list(algo = "gam", model = m, formula = f, predSel = used, response = response, note = note)
 }
 
-algoFitRF <- function(data, predSel, response, ntree) {
+algoFitRF <- function(data, predSel, response, ntree, seed = NULL, threads = 1L) {
   f <- stats::as.formula(paste(response, "~", paste(predSel, collapse = " + ")))
-  m <- suppressWarnings(randomForest::randomForest(formula = f, data = data[, c(response, predSel), drop = FALSE], ntree = ntree))   # regression forest on 0/1, as in the reference code (randomForest warns about it)
-  list(algo = "rf", model = m, formula = f, predSel = predSel, response = response, ntree = ntree, note = "")
+  m <- ranger::ranger(formula = f, data = data[, c(response, predSel), drop = FALSE], num.trees = ntree,
+                      mtry = max(floor(length(predSel) / 3), 1L), min.node.size = 5L, num.threads = threads, seed = seed)
+  list(algo = "rf", model = m, formula = f, predSel = predSel, response = response, ntree = ntree, threads = threads, note = "")
 }
 
 #' Predicted probability of presence
@@ -81,7 +86,7 @@ algoPredict <- function(fit, newdata) {
   p <- switch(fit$algo,
     glm = stats::predict(fit$model, nd, type = "response"),
     gam = stats::predict(fit$model, nd, type = "response"),
-    rf  = stats::predict(fit$model, nd, type = "response"))
+    rf  = ranger::predictions(stats::predict(fit$model, data = nd, num.threads = if (is.null(fit$threads)) 1L else fit$threads)))
   pmin(pmax(as.numeric(p), 0), 1)
 }
 
@@ -94,7 +99,9 @@ algoRefit <- function(fit, data, seed = NULL) {
   m <- switch(fit$algo,
     glm = stats::glm(fit$formula, family = "binomial", data = data),
     gam = mgcv::gam(fit$formula, family = "binomial", data = data),
-    rf  = suppressWarnings(randomForest::randomForest(formula = fit$formula, data = data[, c(fit$response, fit$predSel), drop = FALSE], ntree = fit$ntree)))
+    rf  = ranger::ranger(formula = fit$formula, data = data[, c(fit$response, fit$predSel), drop = FALSE], num.trees = fit$ntree,
+                         mtry = max(floor(length(fit$predSel) / 3), 1L), min.node.size = 5L,
+                         num.threads = if (is.null(fit$threads)) 1L else fit$threads, seed = seed))
   fit$model <- m
   fit
 }
