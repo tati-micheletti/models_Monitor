@@ -116,7 +116,9 @@ algoFitRF <- function(data, predSel, response, ntree, seed = NULL, threads = 1L)
 }
 
 # neural network: standardised predictors, the mean of `nRep` single-hidden-layer fits (logistic output, cross-entropy, weight decay)
-algoFitNN <- function(data, predSel, response, seed = NULL, size = 10L, decay = 0.1, nRep = 5L, maxit = 300L) {
+# Defaults (2026-10-08, tools/diagnoseNN.R pilot, block-CV, 3 scales): 3 hidden units, decay 0.1, up to 1000 iterations. The earlier 10 units / 300 iterations
+# did not converge in 15 of 15 landscape fits; 3 units / decay 0.1 matched or beat the best setting at every scale and converged.
+algoFitNN <- function(data, predSel, response, seed = NULL, size = 3L, decay = 0.1, nRep = 5L, maxit = 1000L) {
   X <- as.matrix(data[, predSel, drop = FALSE])
   mu <- colMeans(X); sdv <- apply(X, 2, stats::sd); sdv[!is.finite(sdv) | sdv == 0] <- 1
   Xs <- sweep(sweep(X, 2, mu, "-"), 2, sdv, "/")
