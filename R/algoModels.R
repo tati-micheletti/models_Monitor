@@ -66,7 +66,7 @@ algoRegistry <- function() list(
              predict = function(fit, nd) stats::predict(fit$model, nd, type = "response")),
   gam = list(fit = function(data, predSel, response, ...) algoFitGAM(data, predSel, response),
              refit = function(fit, data, seed) { fit$model <- mgcv::gam(fit$formula, family = "binomial", data = data); fit },
-             predict = function(fit, nd) stats::predict(fit$model, nd, type = "response")),
+             predict = function(fit, nd) { loadNamespace("mgcv"); stats::predict(fit$model, nd, type = "response") }),   # S3 method needs the package loaded
   rf  = list(fit = function(data, predSel, response, ntree, seed, threads, ...) algoFitRF(data, predSel, response, ntree, seed, threads),
              refit = function(fit, data, seed) { fit$model <- algoFitRF(data, fit$predSel, fit$response, fit$ntree, seed, if (is.null(fit$threads)) 1L else fit$threads)$model; fit },
              predict = function(fit, nd) ranger::predictions(stats::predict(fit$model, data = nd, num.threads = if (is.null(fit$threads)) 1L else fit$threads))),
@@ -129,6 +129,7 @@ algoFitNN <- function(data, predSel, response, seed = NULL, size = 10L, decay = 
        nRep = nRep, note = "")
 }
 algoPredictNN <- function(fit, nd) {
+  loadNamespace("nnet")      # predict() on a saved fit needs the package's S3 method, also in a fresh R process
   Xs <- sweep(sweep(as.matrix(nd[, fit$predSel, drop = FALSE]), 2, fit$model$mu, "-"), 2, fit$model$sdv, "/")
   rowMeans(vapply(fit$model$fits, function(m) as.numeric(stats::predict(m, Xs, type = "raw")), numeric(nrow(Xs))))
 }
