@@ -132,6 +132,31 @@ check("baseline community change has 5 layers incl. turnoverBC", identical(names
 check("baseline: case A meanDeltaP = 0 but gainCount = lossCount = 4 and turnoverBC = 0.8; case B all 0",
       isTRUE(all.equal(as.numeric(terra::values(cm)[1, ]), c(0, 0, 4, 4, 0.8))) && isTRUE(all.equal(as.numeric(terra::values(cm)[2, ]), c(0, 0, 0, 0, 0))))
 
+# --- regional index uncertainty: the matrix version equals the baseline raster function; summaries and shares -----------------------------
+source("modules/runIndex_Monitor/R/aggregateSpeciesToGrid.R"); source("modules/runIndex_Monitor/R/computeGriddedCombinedIndex.R")
+source("modules/runIndex_Monitor/R/computeRegionalIndexUncertainty.R")
+set.seed(5); rd <- tempfile(); dir.create(rd); yrs <- 2020:2023; spp3 <- c("Aa bb", "Cc dd", "Ee ff")
+for (sp in spp3) for (yr in yrs) {                                  # 4 x 4 pixels of 100 m -> 2 x 2 cells of 200 m
+  r <- terra::rast(nrows = 4, ncols = 4, xmin = 0, xmax = 400, ymin = 0, ymax = 400, crs = "EPSG:3035", nlyrs = 2)
+  pr <- runif(16, 0.05, 0.9); if (sp == "Ee ff" && yr == 2020) pr[1:4] <- 1e-9    # species Ee ff is absent from one cell in the baseline year
+  terra::values(r) <- cbind(pr, 1); names(r) <- c("meta_prob", "binary")
+  terra::writeRaster(r, file.path(rd, paste0(gsub(" ", "_", sp), "_meta_suitability_", yr, ".tif")))
+}
+want <- computeGriddedCombinedIndex(spp3, yrs, 2020, rd, 200)
+arr <- lapply(spp3, function(sp) { g <- aggregateSpeciesToGrid(sp, yrs, rd, 200); a <- array(NA_real_, c(4, length(yrs), 2))
+  for (i in seq_along(yrs)) a[, i, ] <- terra::values(g[[as.character(yrs[i])]])[, 1]; a })
+got <- regionalCombineSpecies(arr, baseIdx = 1)
+check("regional matrix index equals computeGriddedCombinedIndex (incl. a species dropped by the baseline floor)",
+      isTRUE(all.equal(got[, , 1], unname(as.matrix(terra::values(want))), check.attributes = FALSE)) && identical(got[, , 1], got[, , 2]))
+check("baseline year of the combined index is exactly 100 where species contribute", all(abs(got[, 1, 1] - 100) < 1e-9, na.rm = TRUE))
+dd <- cbind(c(-1, -2, 3, 0), c(-1, 1, 3, 0), c(-1, 2, 3, 0))
+ch <- regionalChange(dd, c(0.05, 0.95), "delta")
+check("shares of replicates decreasing / increasing are exact", isTRUE(all.equal(unname(ch[, "shareDecrease"]), c(1, 1 / 3, 0, 0))) &&
+      isTRUE(all.equal(unname(ch[, "shareIncrease"]), c(0, 2 / 3, 1, 0))))
+check("change layers are named like the species change maps", identical(colnames(ch), c("deltaMean", "deltaSd", "deltaLwr", "deltaUpr", "deltaWidth", "shareDecrease", "shareIncrease")))
+sm <- regionalSummary(matrix(1:10, 2, 5), c(0.05, 0.95))
+check("summary: mean, sd, interval ordering and width", isTRUE(all.equal(unname(sm[1, "mean"]), 5)) && all(sm[, "lwr"] <= sm[, "upr"]) && isTRUE(all.equal(sm[, "width"], sm[, "upr"] - sm[, "lwr"])))
+
 # --- nearest neighbour without sf ----------------------------------------------------------------------------------
 set.seed(11); q <- cbind(runif(1300, 4e6, 4.6e6), runif(1300, 2.6e6, 3.6e6)); rf <- cbind(runif(900, 4e6, 4.6e6), runif(900, 2.6e6, 3.6e6))
 nn <- uncNearestIdx(q, rf, chunk = 400L)

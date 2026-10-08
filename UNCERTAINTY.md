@@ -108,6 +108,36 @@ Per-replicate predictions are stored as 16-bit integers (resolution 3.3 × 10⁻
 all species, under `…/<species>/pred/<run label>/`. They are what makes adding replicates later possible; delete them
 once the final replicate set is fixed if space is needed.
 
+## Regional index (10 / 20 / 50 km) with uncertainty
+
+The regional index of the baseline (`computeRegionalIndex()`) is a per-cell version of the combined index. The uncertainty version does the same
+inside every replicate and then summarises over replicates, on the RAW grid (smoothing is applied only to the final raw result, never inside
+replicates; the smoothed baseline map therefore has no interval of its own).
+
+1. **Masking before averaging.** The 200 m pixels are masked with the German outline (GADM level 0, as the baseline) BEFORE they are averaged into
+   the coarse cells, so a border cell holds German pixels only. Nothing in the models or predictions is cropped.
+2. **Cell means per replicate** (`R/uncRegional.R`, steps `regionband` per species x band and `regionassemble` per species): for each species, year and
+   replicate, the mean probability of the German pixels of every coarse cell, stored as `<species>/regional/regional_means_<km>km.rds`.
+3. **Index per replicate** (`computeRegionalIndexUncertainty()` in runIndex_Monitor, step `regionindex`): species index = 100 x cell mean in year t /
+   cell mean in the baseline year (a species is left out of a cell where its baseline mean is below `minBaseline`, 10^-6 as in the baseline), combined
+   index = geometric mean over species. **The floor (and a possible DDA-style cap) must be the same in the baseline and here; the decision is open
+   (DECISIONS.md 2026-10-08).**
+4. **Summaries over the replicates** (replicate 0 is never part of an interval): per year mean, sd, lwr, upr, width; change between years (3 comparisons
+   as for the species maps) and trend per decade with `shareDecrease` / `shareIncrease` (cold and hot spots); a coverage layer (share of the cell's pixels
+   inside the outline); a parity check of replicate 0 against the baseline `regional_index_<km>km_raw.tif` (`regional_parity_<km>km.txt`).
+
+| File (`uncertainty_<tag>/regional/`) | What it is |
+|---|---|
+| `regional_index_<km>km_unc_<year>.tif` | 5 layers: `mean`, `sd`, `lwr`, `upr`, `width` of the combined regional index |
+| `regional_index_<km>km_unc_change_<vsBaseline\|vs5YearsAgo\|vsLastYear>.tif` | 7 layers: `deltaMean`, `deltaSd`, `deltaLwr`, `deltaUpr`, `deltaWidth`, `shareDecrease`, `shareIncrease` |
+| `regional_index_<km>km_unc_trend_per_decade.tif` | 7 layers: `slopeMean` ... `slopeWidth`, `shareDecrease`, `shareIncrease` (index points per decade) |
+| `regional_index_<km>km_coverage.tif` | share of the cell inside the German outline (border cells < 1) |
+| `regional_index_<km>km_replicates.rds`, `regional_parity_<km>km.txt` | the per-replicate index array behind the maps; the parity check |
+
+Run on EVE after the band stage: `BIRDMONITOR_UNC_TAG=<tag> UNC_AFTER=<band job id> bash --login cluster/submit_eve_regional.sh` (nothing is refitted;
+it reads the stored replicate predictions). Local test: replicate 0, built from its own pixels, reproduces the baseline regional machinery to 0.002
+index points (10 km), including the border cells.
+
 ## How to read the numbers — limits that belong in the methods
 
 - The `mean` layer is the mean over replicates, not the baseline map (bootstrap averaging shifts it slightly). Use the
@@ -130,7 +160,7 @@ once the final replicate set is fixed if space is needed.
 3. Structural / model-form uncertainty (one algorithm per scale; the algorithm ensemble is planned, improvements.md item 7/15).
 4. Survey-design bias, and spatial/temporal autocorrelation beyond what block resampling captures.
 5. The thinning randomness of the occurrence data (thinning is part of the data preparation, not resampled here).
-6. The regional gridded index maps (computeRegionalIndex() keeps its own method; no interval yet).
+6. The SMOOTHED regional index maps (smoothing is applied to the final raw result only; the raw regional index has intervals, see above).
 
 ## Files
 
