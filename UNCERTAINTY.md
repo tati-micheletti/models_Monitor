@@ -138,6 +138,15 @@ Run on EVE after the band stage: `BIRDMONITOR_UNC_TAG=<tag> UNC_AFTER=<band job 
 it reads the stored replicate predictions). Local test: replicate 0, built from its own pixels, reproduces the baseline regional machinery to 0.002
 index points (10 km), including the border cells.
 
+## Germany-only national means and maps (temporary, DECISIONS.md 2026-10-08)
+
+The prediction window is the bounding box of Germany; for seven species it is predicted entirely, so `area_mean_replicates.csv` (all pixels) averages neighbouring
+countries too. `regionassemble` therefore also writes `<species>/area_mean_replicates_germany.csv` (German pixels only: sum of the cell sums / number of pixels,
+per replicate and year); `assembleAll` with `BIRDMONITOR_UNC_AREAMEAN=area_mean_replicates_germany.csv BIRDMONITOR_INDEX_TAG=germany` writes the species and
+combined index intervals from it to `annual_report_germany/`. The `maskmaps` step writes Germany-only COPIES of the finished maps (`<species>/maps_germany/`,
+`community_germany/`); the originals stay. All of this is chained in `cluster/submit_eve_regional.sh`. The proper fix (cut every input to the study-area outline so
+nothing is predicted outside Germany) is planned after the Steering Consortium meeting.
+
 ## How to read the numbers — limits that belong in the methods
 
 - The `mean` layer is the mean over replicates, not the baseline map (bootstrap averaging shifts it slightly). Use the

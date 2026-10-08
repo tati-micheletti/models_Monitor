@@ -105,6 +105,7 @@ uncRegionalBand <- function(cfg, sp, band, win, bProj, cellSizesM) {
 uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
   labs <- uncRunLabels(cfg, sp); years <- cfg$outYears
   if (!length(labs)) { message(sp, ": no replicate predictions found"); return(invisible(NULL)) }
+  natRows <- list()                                   # German national area means (all German pixels), from the first grid's sums
   for (cs in cellSizesM) {
     km <- cs / 1000; g <- uncRegionalGrid(win, bProj, cs); nc <- terra::ncell(g$template)
     pieces <- list(); idsAll <- integer(0); nGerAll <- NULL
@@ -122,6 +123,12 @@ uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
           S[e$cells, yi, ] <- S[e$cells, yi, ] + e$S; N[e$cells, yi, ] <- N[e$cells, yi, ] + e$N
         }
       }
+      if (cs == cellSizesM[1]) {                                  # national mean over the German pixels = sum of the cell sums / number of pixels
+        Sy <- apply(S, c(2, 3), sum); Ny <- apply(N, c(2, 3), sum)
+        nr <- data.frame(species = sp, replicate = rep(ids, each = length(years)), year = rep(years, times = length(ids)),
+                         areaMean = as.vector(Sy / Ny), nCells = as.vector(Ny))
+        natRows[[lab]] <- nr[nr$nCells > 0, ]
+      }
       m <- S / N; m[N == 0] <- NA_real_
       pieces[[lab]] <- m; idsAll <- c(idsAll, ids); if (is.null(nGerAll)) nGerAll <- nGer
     }
@@ -136,5 +143,34 @@ uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
     uncSaveRDS(out, f)
     message(sp, ": ", km, " km grid: ", length(keep), " cells x ", length(years), " years x ", length(idsAll), " replicates -> ", basename(f))
   }
+  if (length(natRows)) {
+    nat <- do.call(rbind, natRows)
+    utils::write.csv(nat, file.path(uncSpDir(cfg, sp), "area_mean_replicates_germany.csv"), row.names = FALSE)
+    message(sp, ": German-only area means of ", length(unique(nat$replicate)), " replicates x ", length(unique(nat$year)), " years -> area_mean_replicates_germany.csv")
+  }
   invisible(TRUE)
+}
+
+#' Germany-only COPIES of the finished uncertainty maps of one species (`maps/` -> `maps_germany/`) or of the community maps
+#' (`community/` -> `community_germany/`, `sp = NULL`): same files, pixels outside the German outline set to NA. The originals stay.
+#' TEMPORARY (DECISIONS.md 2026-10-08): the proper fix is to cut all inputs to the study area at the source.
+uncMaskMaps <- function(cfg, sp = NULL, outline = NULL) {
+  src <- if (is.null(sp)) file.path(uncRoot(cfg), "community") else uncSpDir(cfg, sp, "maps")
+  dst <- if (is.null(sp)) file.path(uncRoot(cfg), "community_germany") else file.path(uncSpDir(cfg, sp), "maps_germany")
+  fs <- list.files(src, pattern = "[.]tif$", full.names = TRUE)
+  if (!length(fs)) { message("No maps to mask in ", src); return(invisible(NULL)) }
+  dir.create(dst, recursive = TRUE, showWarnings = FALSE)
+  r1 <- terra::rast(fs[1])
+  if (is.null(outline)) outline <- uncGermanyBoundary(cfg, terra::crs(r1))
+  mk <- terra::rasterize(outline, r1[[1]], field = 1, touches = TRUE)
+  for (f in fs) {
+    out <- file.path(dst, basename(f))
+    if (file.exists(out)) next
+    r <- terra::rast(f); m <- if (isTRUE(terra::compareGeom(r, mk, stopOnError = FALSE))) mk else terra::rasterize(outline, r[[1]], field = 1, touches = TRUE)
+    part <- sub("[.]tif$", ".part.tif", out)
+    terra::writeRaster(terra::mask(r, m), part, overwrite = TRUE, datatype = "FLT4S", gdal = c("COMPRESS=DEFLATE", "PREDICTOR=3"))
+    file.rename(part, out)
+  }
+  message("Germany-only maps: ", length(fs), " files -> ", dst)
+  invisible(dst)
 }
