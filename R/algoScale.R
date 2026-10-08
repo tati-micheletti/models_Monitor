@@ -21,6 +21,7 @@ ensFile <- function(cfg, sp, scale, algo, kind, yr = NULL) {
     return(file.path(d, sprintf("%s_pred_%s_%d.tif", spClean, c(climate = "EU", landscape = "landscape", habitat = "habitat")[[scale]], yr)))
   switch(kind,
     members = file.path(d, sprintf("%s_perf_members_%s_%s.rds", spClean, algo, scale)),
+    sd     = file.path(d, sprintf("%s_sd_%s_%s_%d.tif", spClean, algo, scale, yr)),
     model  = file.path(d, sprintf("%s_%s_%s.rds", spClean, algo, scale)),
     perf   = file.path(d, sprintf("%s_perf_%s_%s.rds", spClean, algo, scale)),
     cvpred = file.path(d, sprintf("%s_cvpred_%s_%s.rds", spClean, algo, scale)),

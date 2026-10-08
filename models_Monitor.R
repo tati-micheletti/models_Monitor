@@ -23,7 +23,9 @@ defineModule(sim, list(
   documentation = list("NEWS.md", "README.md", "models_Monitor.Rmd"),
   reqdPkgs = list("PredictiveEcology/SpaDES.core@development (>= 3.2.0)",
                    "PredictiveEcology/reproducible@development",
-                   "terra", "dismo", "gbm", "glmnet", "PresenceAbsence", "geodata"),
+                   "terra", "dismo", "gbm", "glmnet", "PresenceAbsence", "geodata",
+                   # ensemble (GLM/GAM/random forest/neural network) and uncertainty workflows
+                   "mgcv", "ranger", "nnet", "matrixStats"),
   parameters = bindrows(
     defineParameter(".plots", "character", "screen", NA, NA,
                     "Used by Plots function, which can be optionally used here"),

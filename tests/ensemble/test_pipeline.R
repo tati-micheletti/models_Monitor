@@ -41,6 +41,10 @@ for (scale in scales) {
     both <- stats::complete.cases(v) & !is.na(e)
     ok(paste(tag, ": map = mean of its members (", sum(both), "cells )"), max(abs(rowMeans(as.matrix(v))[both] - e[both])) < 1e-5)
     ok(paste(tag, ": NA where any member is NA"), all(is.na(e[!stats::complete.cases(v)])))
+    if (length(members) > 1L) {
+      sdv <- values(rast(ensFile(cfg, sp, scale, tag, "sd", yr))[[1]])[, 1]
+      ok(paste(tag, ": SD layer = standard deviation across the members"), max(abs(sdv[both] - apply(as.matrix(v)[both, , drop = FALSE], 1, sd))) < 1e-5)
+    }
   }
   ok("a single-member ensemble equals that model", isTRUE(all.equal(readRDS(ensFile(cfg, sp, scale, "ens_brt", "cvpred")), readRDS(ensFile(cfg, sp, scale, "brt", "cvpred")))))
   print(readRDS(ensFile(cfg, sp, scale, ensTag(c("brt", algos)), "members")), digits = 3)
