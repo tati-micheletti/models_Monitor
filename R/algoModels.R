@@ -65,7 +65,7 @@ algoRegistry <- function() list(
              refit = function(fit, data, seed) { fit$model <- stats::glm(fit$formula, family = "binomial", data = data); fit },
              predict = function(fit, nd) stats::predict(fit$model, nd, type = "response")),
   gam = list(fit = function(data, predSel, response, ...) algoFitGAM(data, predSel, response),
-             refit = function(fit, data, seed) { fit$model <- mgcv::gam(fit$formula, family = "binomial", data = data); fit },
+             refit = function(fit, data, seed) { fit$model <- do.call(mgcv::gam, c(list(fit$formula, family = "binomial", data = data), fit$gamArgs)); fit },   # same settings as the main fit
              predict = function(fit, nd) { loadNamespace("mgcv"); stats::predict(fit$model, nd, type = "response") }),   # S3 method needs the package loaded
   rf  = list(fit = function(data, predSel, response, ntree, seed, threads, ...) algoFitRF(data, predSel, response, ntree, seed, threads),
              refit = function(fit, data, seed) { fit$model <- algoFitRF(data, fit$predSel, fit$response, fit$ntree, seed, if (is.null(fit$threads)) 1L else fit$threads)$model; fit },
@@ -93,19 +93,28 @@ algoFitGLM <- function(data, predSel, response) {
 }
 
 algoFitGAM <- function(data, predSel, response) {
+  # Wiedenroth et al. (04c): s(x, k = 4) for every predictor. If mgcv's default fit does NOT converge (found on EVE 2026-10-08, Alauda arvensis at the climate
+  # scale), try more robust settings BEFORE giving anything up: REML with more iterations, REML with the extended Fellner-Schall optimiser, then k = 3, and
+  # only then drop the sparsest predictor (as before). A fit that converged at the first attempt is exactly the old fit (no extra arguments).
   used <- predSel; note <- ""
+  attempts <- list(
+    list(label = "", args = list()),
+    list(label = "REML 500 iterations; ", args = list(method = "REML", control = mgcv::gam.control(maxit = 500))),
+    list(label = "REML + efs optimiser; ", args = list(method = "REML", optimizer = "efs", control = mgcv::gam.control(maxit = 500))))
   repeat {
-    f <- stats::as.formula(paste(response, "~", paste0("s(", used, ", k = 4)", collapse = " + ")))
-    m <- tryCatch(mgcv::gam(f, family = "binomial", data = data), error = function(e) NULL)
-    if (!is.null(m)) break
-    if (length(used) <= 1L) stop("GAM could not be fitted even with a single predictor.")
+    for (kk in c(4, 3)) for (at in attempts) {
+      f <- stats::as.formula(paste(response, "~", paste0("s(", used, ", k = ", kk, ")", collapse = " + ")))
+      m <- tryCatch(suppressWarnings(do.call(mgcv::gam, c(list(f, family = "binomial", data = data), at$args))), error = function(e) NULL)
+      if (!is.null(m) && isTRUE(m$converged))
+        return(list(algo = "gam", model = m, formula = f, gamArgs = at$args, predSel = used, response = response,
+                    note = paste0(note, if (kk != 4) "k = 3; " else "", at$label)))
+    }
+    if (length(used) <= 1L) stop("GAM did not converge, even with a single predictor and the robust settings.")
     nz <- vapply(used, function(k) sum(data[[k]] != 0, na.rm = TRUE), numeric(1))
     drop <- used[which.min(nz)]
     note <- paste0(note, "dropped ", drop, "; ")
     used <- setdiff(used, drop)
   }
-  if (!isTRUE(m$converged)) stop("GAM did not converge.")
-  list(algo = "gam", model = m, formula = f, predSel = used, response = response, note = note)
 }
 
 algoFitRF <- function(data, predSel, response, ntree, seed = NULL, threads = 1L) {
