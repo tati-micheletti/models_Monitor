@@ -10,13 +10,42 @@
 # Steps (tools/runUncertaintyTask.R): `regionband` (species x band: partial sums per coarse cell) -> `regionassemble` (species:
 # add the bands up -> `regional_means_<km>km.rds`) -> `regionindex` (once: runIndex_Monitor).
 
-#' German national outline (GADM level 0), in the coordinate system `crs`. Cached under inputs/predictors/raw/gadm (as in the baseline).
-uncGermanyBoundary <- function(cfg, crs) {
+#' lon/lat (degrees, GRS80/WGS84) -> ETRS89-LAEA Europe (EPSG:3035) easting/northing (m), closed form (Snyder 1987; EPSG Guidance Note 7-2)
+#'
+#' A copy of dataPrep_Monitor's `lonLatToLAEA()` so this module does not depend on another one. Pure R, NO GDAL/PROJ: on EVE the
+#' EPSG:3035 axis order of terra/sf transformations depends on which geo library initialised first and came out SWAPPED in some
+#' sessions (DECISIONS.md 2026-10-05; again 2026-10-08 in a plain terra job, where the German outline got x and y exchanged and
+#' `crop()` stopped with "extents do not overlap"). This formula cannot flip.
+uncLonLatToLAEA <- function(lon, lat) {
+  a <- 6378137; f <- 1 / 298.257222101; e2 <- 2 * f - f^2; e <- sqrt(e2)
+  qf <- function(phi) { s <- sin(phi); (1 - e2) * (s / (1 - e2 * s^2) - (1 / (2 * e)) * log((1 - e * s) / (1 + e * s))) }
+  phi <- lat * pi / 180; lam <- lon * pi / 180; phi0 <- 52 * pi / 180; lam0 <- 10 * pi / 180
+  q <- qf(phi); qp <- qf(pi / 2); q0 <- qf(phi0)
+  Rq <- a * sqrt(qp / 2); beta <- asin(q / qp); beta0 <- asin(q0 / qp)
+  m1 <- cos(phi0) / sqrt(1 - e2 * sin(phi0)^2); D <- a * m1 / (Rq * cos(beta0))
+  B <- Rq * sqrt(2 / (1 + sin(beta0) * sin(beta) + cos(beta0) * cos(beta) * cos(lam - lam0)))
+  cbind(x = 4321000 + B * D * cos(beta) * sin(lam - lam0),
+        y = 3210000 + (B / D) * (cos(beta0) * sin(beta) - sin(beta0) * cos(beta) * cos(lam - lam0)))
+}
+
+#' German national outline (GADM level 0, as in the baseline) in EPSG:3035, built from the lon/lat vertices with `uncLonLatToLAEA()`
+#' (never through a GDAL/PROJ transformation, see above) and labelled with the CRS of the predictions. Stops if the result is not in Germany's box.
+#' @param gadmDir folder of the geodata cache (inputs/predictors/raw/gadm); @param crs CRS of the rasters it will be used with.
+uncOutlineLAEA <- function(gadmDir, crs) {
   if (!requireNamespace("geodata", quietly = TRUE))
     stop("The regional step needs the 'geodata' package (national outline); the baseline regional index needs it too.")
-  d <- file.path(cfg$inputRoot, "predictors", "raw", "gadm"); dir.create(d, recursive = TRUE, showWarnings = FALSE)
-  terra::project(geodata::gadm(country = "DEU", level = 0, path = d), crs)
+  dir.create(gadmDir, recursive = TRUE, showWarnings = FALSE)
+  g <- geodata::gadm(country = "DEU", level = 0, path = gadmDir)                 # lon/lat
+  v <- terra::geom(g); xy <- uncLonLatToLAEA(v[, "x"], v[, "y"])
+  out <- terra::vect(cbind(v[, c("geom", "part")], x = xy[, "x"], y = xy[, "y"], hole = v[, "hole"]), type = "polygons", crs = crs)
+  e <- as.vector(terra::ext(out))
+  if (!(e[1] > 3.9e6 && e[2] < 4.8e6 && e[3] > 2.6e6 && e[4] < 3.7e6))
+    stop("German outline outside Germany's EPSG:3035 box: x ", round(e[1]), "-", round(e[2]), ", y ", round(e[3]), "-", round(e[4]))
+  out
 }
+
+#' German outline for the regional step, in the CRS `crs` of the predictions (inputs/predictors/raw/gadm cache, as in the baseline)
+uncGermanyBoundary <- function(cfg, crs) uncOutlineLAEA(file.path(cfg$inputRoot, "predictors", "raw", "gadm"), crs)
 
 #' Coarse grid of one cell size: the 200 m window cropped to the outline, then aggregated by the same factor as the baseline
 #' (`aggregateSpeciesToGrid()`: crop to the boundary, `aggregate(fact = round(cellSizeM / res))`), so the cells are the same.

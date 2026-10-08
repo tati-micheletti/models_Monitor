@@ -157,6 +157,16 @@ check("change layers are named like the species change maps", identical(colnames
 sm <- regionalSummary(matrix(1:10, 2, 5), c(0.05, 0.95))
 check("summary: mean, sd, interval ordering and width", isTRUE(all.equal(unname(sm[1, "mean"]), 5)) && all(sm[, "lwr"] <= sm[, "upr"]) && isTRUE(all.equal(sm[, "width"], sm[, "upr"] - sm[, "lwr"])))
 
+# --- German outline without GDAL/PROJ: the closed-form LAEA equals terra's projection (where terra's axis order is fine) ---------------------
+check("uncLonLatToLAEA: (11.5E, 48.1N) -> easting 4432769 / northing 2777406 (reference values of tools/reprexTerraSfAxis.R)",
+      all(abs(uncLonLatToLAEA(11.5, 48.1) - c(4432769, 2777406)) < 1))
+if (requireNamespace("geodata", quietly = TRUE) && dir.exists("inputs/predictors/raw/gadm")) {
+  ol <- uncOutlineLAEA("inputs/predictors/raw/gadm", "EPSG:3035")
+  tp <- terra::project(geodata::gadm(country = "DEU", level = 0, path = "inputs/predictors/raw/gadm"), "EPSG:3035")
+  check("closed-form German outline = terra::project outline (extent within 5 m; nothing swapped)",
+        max(abs(as.vector(terra::ext(ol)) - as.vector(terra::ext(tp)))) < 5 && terra::ext(ol)$xmin > 3.9e6)
+}
+
 # --- nearest neighbour without sf ----------------------------------------------------------------------------------
 set.seed(11); q <- cbind(runif(1300, 4e6, 4.6e6), runif(1300, 2.6e6, 3.6e6)); rf <- cbind(runif(900, 4e6, 4.6e6), runif(900, 2.6e6, 3.6e6))
 nn <- uncNearestIdx(q, rf, chunk = 400L)
