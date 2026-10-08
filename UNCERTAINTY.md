@@ -52,6 +52,14 @@ Across species (`outputs/<runName>/uncertainty/`):
 | `combined_index_replicates.csv` | the per-replicate series behind it. |
 | `community/richness_expected_unc_<year>.tif` | expected species richness (sum of probabilities) with the 5-layer summary. |
 | `community/community_meanDeltaP_unc_<comparison>.tif` | mean change in probability over species, 7 layers as above. |
+| `community/community_turnoverBC_unc_<comparison>.tif` | **Bray-Curtis turnover** between the two years, computed per replicate over all species and then summarised: 5 layers (`mean`, `sd`, `lwr`, `upr`, `width`; no share layers, a dissimilarity has no sign). 0 = the expected community is unchanged, 1 = no species in common. See the note below. |
+
+Why a turnover layer: expected richness (sum of probabilities) and `community_meanDeltaP` (mean of the signed changes) both cancel under a swap of
+species. Example: 5 species at 0.8 in 2005; in 2025 four are lost and four others gained -> richness identical to "nothing changed", mean change
+0. Bray-Curtis, BC = sum_s |p_2025 - p_ref| / sum_s (p_ref + p_2025) = 1 - 2 sum_s min(p_ref, p_2025) / (sum_s p_ref + sum_s p_2025), is 0.8 for the swap
+and 0 for no change. The probabilities of occurrence stand in for abundances; BC also rises when richness changes without any swap
+(gain/loss of species are both turnover and nestedness in Baselga's terms; they are not separated here). Baseline layer: `turnoverBC`, the 5th layer
+of `change_<comparison>_community.tif`.
 
 How to read the confidence layers: the interval is a **percentile interval of the fitted probability surface** (how much
 the model would change if the training data had been different), **not** a prediction interval for observed occurrences.

@@ -108,6 +108,30 @@ check("index series rises with the simulated +2%/yr trend", all(diff(cb$estimate
 check("interval files are written", all(file.exists(file.path(rd, c("species_index_uncertainty.csv", "combined_index_uncertainty.csv")), file.path(ud, "combined_index_replicates.csv"))))
 check("baseline year not mapped -> skipped without error", is.null(computeIndexUncertainty(c("Aa bb"), ud, rd, baselineYear = 1999, currentYear = 2009, nBands = 2)))
 
+# --- Bray-Curtis turnover: a species swap (case A) vs no change (case B) ----------------------------------------------------
+# 9 species at one pixel. 2005: species 1-5 present (p = 0.8). Case A 2025: species 1 stays, 2-5 lost, 6-9 gained. Case B 2025: unchanged.
+p0 <- c(rep(0.8, 5), rep(0, 4)); pA <- c(0.8, rep(0, 4), rep(0.8, 4)); pB <- p0
+bc <- function(a, b) uncBrayCurtis(matrix(sum(abs(b - a))), matrix(sum(a + b)))[1, 1]
+check("swap of 4 of 5 species: same expected richness as no change ...", isTRUE(all.equal(sum(pA), sum(pB))))
+check("... and mean change in probability cancels to 0 (cannot see the swap)", isTRUE(all.equal(mean(pA - p0), 0)))
+check("Bray-Curtis: case A = 0.8, case B = 0", isTRUE(all.equal(bc(p0, pA), 0.8)) && bc(p0, pB) == 0)
+check("Bray-Curtis = 1 - 2 sum(min) / (sum p0 + sum p1) (the textbook form)", isTRUE(all.equal(bc(p0, pA), 1 - 2 * sum(pmin(p0, pA)) / (sum(p0) + sum(pA)))))
+check("Bray-Curtis = 1 when no species is shared, and stays defined when everything is 0",
+      isTRUE(all.equal(bc(c(0.5, 0), c(0, 0.5)), 1)) && bc(c(0, 0), c(0, 0)) == 0)
+check("uncBrayCurtis keeps the matrix shape (cells x replicates)", identical(dim(uncBrayCurtis(matrix(1:6 / 10, 3, 2), matrix(1, 3, 2))), c(3L, 2L)))
+# the baseline community layer (runIndex_Monitor::computeChangeMaps) gives the same numbers on two pixels (cell 1 = case A, cell 2 = case B)
+source("modules/runIndex_Monitor/R/combineLayersSafely.R"); source("modules/runIndex_Monitor/R/computeChangeMaps.R")
+md <- tempfile(); dir.create(md); spp <- paste("Sp", letters[1:9])
+for (i in 1:9) for (yr in c(2005, 2025)) {
+  pr <- c(if (yr == 2005) p0[i] else pA[i], p0[i]); r <- terra::rast(nrows = 1, ncols = 2, nlyrs = 2, xmin = 0, xmax = 2, ymin = 0, ymax = 1)
+  terra::values(r) <- cbind(pr, as.numeric(pr > 0.5)); names(r) <- c("meta_prob", "binary")
+  terra::writeRaster(r, file.path(md, paste0(gsub(" ", "_", spp[i]), "_meta_suitability_", yr, ".tif")), overwrite = TRUE)
+}
+cm <- computeChangeMaps(spp, 2005, 2025, md)$community
+check("baseline community change has 5 layers incl. turnoverBC", identical(names(cm), c("meanDeltaP", "netGainLoss", "gainCount", "lossCount", "turnoverBC")))
+check("baseline: case A meanDeltaP = 0 but gainCount = lossCount = 4 and turnoverBC = 0.8; case B all 0",
+      isTRUE(all.equal(as.numeric(terra::values(cm)[1, ]), c(0, 0, 4, 4, 0.8))) && isTRUE(all.equal(as.numeric(terra::values(cm)[2, ]), c(0, 0, 0, 0, 0))))
+
 # --- nearest neighbour without sf ----------------------------------------------------------------------------------
 set.seed(11); q <- cbind(runif(1300, 4e6, 4.6e6), runif(1300, 2.6e6, 3.6e6)); rf <- cbind(runif(900, 4e6, 4.6e6), runif(900, 2.6e6, 3.6e6))
 nn <- uncNearestIdx(q, rf, chunk = 400L)

@@ -140,7 +140,8 @@ uncSummarizeSpeciesBand <- function(cfg, sp, band) {
   invisible(TRUE)
 }
 
-#' Community layers per band (needs all species): expected richness (sum of probabilities) and mean change in probability
+#' Community layers per band (needs all species): expected richness (sum of probabilities), mean change in probability and
+#' Bray-Curtis turnover between the two years of each comparison (pieces `bcDissim_<comparison>`)
 uncCommunityBand <- function(cfg, band) {
   pieceDir <- file.path(uncRoot(cfg), "community", "pieces"); dir.create(pieceDir, recursive = TRUE, showWarnings = FALSE)
   tmpl <- band$template
@@ -171,20 +172,37 @@ uncCommunityBand <- function(cfg, band) {
   }
   for (comp in names(uncComparisons(cfg))) {
     y0 <- uncComparisons(cfg)[[comp]]
-    if (!(y0 %in% yrs && y1 %in% yrs) || file.exists(pf("meanDeltaP", comp))) next
-    items <- lapply(cfg$species, function(sp) {
+    needDelta <- !file.exists(pf("meanDeltaP", comp)); needBC <- !file.exists(pf("bcDissim", comp))
+    if (!(y0 %in% yrs && y1 %in% yrs) || !(needDelta || needBC)) next
+    items <- lapply(cfg$species, function(sp) {              # P = change in probability, T = probability in both years (Bray-Curtis denominator)
       a <- uncReadBandYear(cfg, sp, y0, band$k); b <- uncReadBandYear(cfg, sp, y1, band$k)
       if (is.null(a) || is.null(b)) return(NULL)
       common <- intersect(a$idx, b$idx); cols <- intersect(a$ids, b$ids)
       if (!length(common) || length(cols) < 2) return(NULL)
-      list(idx = common, ids = cols,
-           P = b$P[match(common, b$idx), match(cols, b$ids), drop = FALSE] - a$P[match(common, a$idx), match(cols, a$ids), drop = FALSE])
+      pa <- a$P[match(common, a$idx), match(cols, a$ids), drop = FALSE]; pb <- b$P[match(common, b$idx), match(cols, b$ids), drop = FALSE]
+      list(idx = common, ids = cols, P = pb - pa, T = if (needBC) pa + pb)
     })
-    acc <- accumulate(items)
-    if (!is.null(acc)) uncWritePiece(tmpl, acc$cells, uncSummarizeChange(acc$S / acc$N, cfg$probs), pf("meanDeltaP", comp))
+    if (needDelta) {
+      acc <- accumulate(items)
+      if (!is.null(acc)) uncWritePiece(tmpl, acc$cells, uncSummarizeChange(acc$S / acc$N, cfg$probs), pf("meanDeltaP", comp))
+    }
+    if (needBC) {                                            # compositional turnover between the two years, per replicate, then summarised over replicates
+      accAbs <- accumulate(lapply(items, function(it) if (!is.null(it)) list(idx = it$idx, ids = it$ids, P = abs(it$P))))
+      accTot <- accumulate(lapply(items, function(it) if (!is.null(it)) list(idx = it$idx, ids = it$ids, P = it$T)))
+      if (!is.null(accAbs) && !is.null(accTot))
+        uncWritePiece(tmpl, accAbs$cells, uncSummarizeMatrix(uncBrayCurtis(accAbs$S, accTot$S), cfg$probs), pf("bcDissim", comp))
+    }
+    rm(items); invisible(gc(verbose = FALSE))
   }
   invisible(TRUE)
 }
+
+#' Bray-Curtis dissimilarity between two years from the community sums over species, per cell (rows) and replicate (columns):
+#' BC = sum_s |p1 - p0| / sum_s (p0 + p1) = 1 - 2 sum_s min(p0, p1) / (sum_s p0 + sum_s p1).
+#' 0 = the expected community is unchanged, 1 = no species in common. The probabilities of occurrence stand in for abundances.
+#' @param sumAbsDelta matrix: sum over species of |p1 - p0|.
+#' @param sumTotal matrix: sum over species of (p0 + p1).
+uncBrayCurtis <- function(sumAbsDelta, sumTotal) sumAbsDelta / pmax(sumTotal, 1e-12)
 
 #' Stitch the band pieces of one kind into one compressed GeoTIFF (virtual mosaic -> file)
 uncStitch <- function(pieceFiles, out) {
