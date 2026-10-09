@@ -171,8 +171,13 @@ uncRidgeSpecies <- function(cfg, sp) {
     colnames(X) <- c("climate_mean_prob", "landscape_mean_prob", "habitat_mean_prob")
     seed <- if (b == 0) 42L else stableSeed(c("ridgeBoot", sp, b))
     info$seed[j] <- seed
+    # The penalty of a replicate is chosen by THE SAME RULE as the baseline's (ten random folds, lambda.1se), because a bootstrap must repeat the same procedure on the
+    # resampled data. (Until 2026-10-10 the replicates used spatial BLOCK folds: 2-3 x larger penalties, weights shrunk towards zero -- Perdix perdix to exactly zero --
+    # and trends much weaker than the baseline's, so the baseline fell outside its own interval; that variant is kept as a sensitivity analysis:
+    # BIRDMONITOR_UNC_RIDGEFOLDS=block.)
+    ridgeFolds <- Sys.getenv("BIRDMONITOR_UNC_RIDGEFOLDS", "random")
     fit <- tryCatch(uncWithSeed(seed, {
-      if (b == 0) fitRidgeCv(X, y, nfolds = 10)
+      if (b == 0 || ridgeFolds != "block") fitRidgeCv(X, y, nfolds = 10)
       else {
         ub <- unique(blk); nf <- min(10L, length(ub))
         foldOf <- stats::setNames(sample(rep_len(seq_len(nf), length(ub))), ub)
