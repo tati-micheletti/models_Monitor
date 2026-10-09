@@ -180,11 +180,22 @@ uncFitMembers <- function(cfg, sp) {
       main <- readRDS(ensFile(cfg, sp, scaleKey, m, "model"))
       main$threads <- 1L
       t0 <- Sys.time()
+      # An error in ONE refit must not take the other replicates of the same core with it (mclapply reports the whole batch of a core as failed): every refit is caught
+      # and, if it cannot be fitted even with the robust settings of the algorithm, the MAIN fit stands in for that replicate. The number is reported and logged.
       one <- function(j) { b <- cfg$reps[j]
-        if (b == 0) main else algoRefit(main, spPa[draws[[j]], , drop = FALSE], seed = stableSeed(c("bootMember", sp, scaleKey, m, b))) }
+        if (b == 0) return(main)
+        tryCatch(algoRefit(main, spPa[draws[[j]], , drop = FALSE], seed = stableSeed(c("bootMember", sp, scaleKey, m, b))),
+                 error = function(e) structure(list(error = conditionMessage(e)), class = "refitError")) }
       fits <- if (cfg$cores > 1L) parallel::mclapply(seq_along(cfg$reps), one, mc.cores = min(cfg$cores, length(cfg$reps))) else lapply(seq_along(cfg$reps), one)
-      bad <- vapply(fits, function(x) !is.list(x) || is.null(x$model), logical(1))
-      if (any(bad)) stop(scaleKey, " / ", m, ": ", sum(bad), " replicate fit(s) failed, e.g. replicate ", cfg$reps[which(bad)[1]])
+      bad <- vapply(fits, function(x) inherits(x, "refitError") || inherits(x, "try-error") || !is.list(x) || is.null(x$model), logical(1))
+      if (any(bad)) {
+        msgs <- unique(vapply(fits[bad], function(x) if (inherits(x, "refitError")) x$error else as.character(x)[1], character(1)))
+        message(scaleKey, " / ", m, ": ", sum(bad), " of ", length(fits), " replicate refits FAILED (", paste(utils::head(substr(msgs, 1, 120), 3), collapse = " | "), ") -> the main fit stands in for them")
+        utils::write.table(data.frame(species = sp, scale = scaleKey, member = m, runLabel = cfg$repLabel, replicate = cfg$reps[bad], reason = substr(msgs[1], 1, 200)),
+                           file.path(outDir, "refit_fallbacks.csv"), sep = ",", row.names = FALSE, col.names = !file.exists(file.path(outDir, "refit_fallbacks.csv")),
+                           append = file.exists(file.path(outDir, "refit_fallbacks.csv")), qmethod = "double")
+        for (jj in which(bad)) fits[[jj]] <- main
+      }
       uncSaveRDS(list(ids = cfg$reps, fits = fits, predSel = main$predSel, member = m, scaleKey = scaleKey), f)
       message(scaleKey, " / ", m, ": ", length(fits), " replicate fits in ", round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min -> ", basename(f),
               " (", round(file.size(f) / 1e6), " MB)")

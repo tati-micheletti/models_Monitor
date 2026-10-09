@@ -65,7 +65,13 @@ algoRegistry <- function() list(
              refit = function(fit, data, seed) { fit$model <- stats::glm(fit$formula, family = "binomial", data = data); fit },
              predict = function(fit, nd) stats::predict(fit$model, nd, type = "response")),
   gam = list(fit = function(data, predSel, response, ...) algoFitGAM(data, predSel, response),
-             refit = function(fit, data, seed) { fit$model <- do.call(mgcv::gam, c(list(fit$formula, family = "binomial", data = data), fit$gamArgs)); fit },   # same settings as the main fit
+             refit = function(fit, data, seed) {
+               # the main fit's settings first; if that errors or does not converge on this resample (found on EVE 2026-10-09: 3-20 of 26 replicates per species),
+               # the same robust ladder as the main fit (REML, efs optimiser, k = 3, then dropping the sparsest predictor)
+               m <- tryCatch(suppressWarnings(do.call(mgcv::gam, c(list(fit$formula, family = "binomial", data = data), fit$gamArgs))), error = function(e) NULL)
+               if (!is.null(m) && isTRUE(m$converged)) { fit$model <- m; return(fit) }
+               g <- algoFitGAM(data, fit$predSel, fit$response)
+               fit$model <- g$model; fit$formula <- g$formula; fit$gamArgs <- g$gamArgs; fit$predSel <- g$predSel; fit$note <- paste0(fit$note, " | refit: ", g$note); fit },
              predict = function(fit, nd) { loadNamespace("mgcv"); stats::predict(fit$model, nd, type = "response") }),   # S3 method needs the package loaded
   rf  = list(fit = function(data, predSel, response, ntree, seed, threads, ...) algoFitRF(data, predSel, response, ntree, seed, threads),
              refit = function(fit, data, seed) { fit$model <- algoFitRF(data, fit$predSel, fit$response, fit$ntree, seed, if (is.null(fit$threads)) 1L else fit$threads)$model; fit },
