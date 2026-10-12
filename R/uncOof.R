@@ -89,6 +89,14 @@ uncOofSpecies <- function(cfg, sp, minPerClass = 10) {
   S <- array(NA_real_, c(length(ctx$rows), 3, length(ids)), dimnames = list(NULL, unname(keys), NULL))
 
   for (scale in names(keys)) {
+    # checkpoint per scale: a task that hits its time limit resumes at the first unfinished scale (added 2026-10-12, Emberiza calandra timed out in this step)
+    partF <- file.path(dirname(outF), paste0("oof_", cfg$repLabel, "_", scale, ".part.rds"))
+    if (file.exists(partF)) {
+      part <- readRDS(partF)
+      if (identical(as.integer(part$ids), as.integer(ids)) && length(part$v) == length(ctx$rows) * length(ids)) {
+        S[, keys[[scale]], ] <- part$v; message(scale, ": out-of-fold inputs read from the checkpoint ", partF); next
+      }
+    }
     mod <- readRDS(file.path(uncSpDir(cfg, sp, "models"), paste0(scale, "_", cfg$repLabel, ".rds")))
     stopifnot(identical(as.integer(mod$ids), as.integer(ids)))
     brtM <- uncMainModel(cfg, sp, scale)
@@ -144,6 +152,7 @@ uncOofSpecies <- function(cfg, sp, minPerClass = 10) {
     bad <- vapply(res, function(r) !is.numeric(r) || length(r) != length(ctx$rows), logical(1))
     if (any(bad)) stop(scale, ": ", sum(bad), " replicate(s) failed in the out-of-fold step, e.g. replicate ", ids[which(bad)[1]])
     for (j in seq_along(ids)) S[, keys[[scale]], j] <- res[[j]]
+    uncSaveRDS(list(ids = ids, v = S[, keys[[scale]], ]), partF)
     message(scale, ": out-of-fold inputs of ", length(ids), " replicates (", length(folds), " folds each) in ",
             round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min")
   }
