@@ -82,6 +82,10 @@ loadCovariates <- function(year, landscapeDir, habitatDir) {
   if (file.exists(heteroFile)) {
     extraLayers$landscape_heterogeneity <- terra::rast(heteroFile)
   }
+  unmappedFile <- file.path(landscapeDir, paste0("unmapped_other_", year, "_landscape_", resSuffix, ".tif"))      # share of the cell no mapped class describes (computeUnmappedShare())
+  if (file.exists(unmappedFile)) {
+    extraLayers$unmapped_other <- terra::rast(unmappedFile)
+  }
 
   # Hedges back/forward-filling
   # Hedge data availability:

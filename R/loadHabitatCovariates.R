@@ -73,6 +73,10 @@ loadHabitatCovariates <- function(year, habitatDir) {
   if (file.exists(heteroFile)) {
     extraLayers$landscape_heterogeneity <- terra::rast(heteroFile)
   }
+  unmappedFile <- file.path(habitatDir, paste0("unmapped_other_", year, "_habitat_", resSuffix, ".tif"))      # share of the cell no mapped class describes (computeUnmappedShare())
+  if (file.exists(unmappedFile)) {
+    extraLayers$unmapped_other <- terra::rast(unmappedFile)
+  }
 
   # combineLayersSafely() rather than a bare c() -- lc/elev/slope/dist are
   # all resampled (derived, not read-straight-from-disk) rasters, which can
