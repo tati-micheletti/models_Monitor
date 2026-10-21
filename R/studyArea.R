@@ -88,6 +88,15 @@ insideStudyArea <- function(xy, area, bufferM = 0, res = 200) {
   !is.na(terra::extract(mk, xy)[, 1])
 }
 
+#' Does a layer cropped under `stamp` (see `studyAreaFingerprint()`) still contain the whole working area `wk`? (A layer cropped for a smaller area cannot be used for a larger one.)
+stampCoversWorkingArea <- function(stamp, wk, tolM = 1) {
+  parts <- strsplit(stamp, "|", fixed = TRUE)[[1]]
+  ext <- suppressWarnings(as.numeric(strsplit(parts[2], ",", fixed = TRUE)[[1]])); buf <- suppressWarnings(as.numeric(sub("^buffer", "", parts[5])))
+  if (length(ext) != 4 || anyNA(ext) || is.na(buf)) return(FALSE)
+  old <- c(ext[1] - buf, ext[2] + buf, ext[3] - buf, ext[4] + buf); new <- as.vector(terra::ext(wk))
+  new[1] >= old[1] - tolM && new[2] <= old[2] + tolM && new[3] >= old[3] - tolM && new[4] <= old[4] + tolM
+}
+
 #' Crop and mask every processed predictor layer to the study area (before anything is extracted from it)
 #'
 #' Walks `processedRoot/scale_*/*.tif`. Each layer is cropped to the extent of the study area plus the buffer of its scale and the cells outside the (buffered) area are set to
@@ -116,6 +125,9 @@ applyStudyAreaToProcessed <- function(processedRoot, area, recordsBufferM = 1000
       sf <- paste0(f, ".studyarea")
       if (isClimate && grepl(paste0("bioclim_[0-9]{4}-", ebba2TrainingYear, "_"), basename(f))) { rows[[length(rows) + 1]] <- data.frame(file = f, action = "training window, left as it is"); next }
       if (file.exists(sf) && identical(readLines(sf, warn = FALSE)[1], stamp)) { rows[[length(rows) + 1]] <- data.frame(file = f, action = "current"); next }
+      if (file.exists(sf) && !stampCoversWorkingArea(readLines(sf, warn = FALSE)[1], wk))
+        stop("applyStudyAreaToProcessed(): ", f, " was cropped for a SMALLER area than the current one (stamp: ", readLines(sf, warn = FALSE)[1], "); cropping is done in place, so the cells outside the old area are gone. ",
+             "Re-make the processed layers of ", basename(d), " (move them aside and rerun the preparation) before running for this area.")
       if (dryRun) { rows[[length(rows) + 1]] <- data.frame(file = f, action = "would crop and mask"); next }
       r <- terra::rast(f); dt <- terra::datatype(r)[1]; nm <- names(r)
       out <- maskToStudyArea(r, wk); names(out) <- nm
