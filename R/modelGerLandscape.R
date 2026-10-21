@@ -128,9 +128,11 @@ modelGerLandscape <- function(inputsData, predictionYears, processedRoot, output
         next
       }
 
+      # Species-level cache key (see modelGerHabitat()): the content of exactly the layers this species uses, not of the whole stack
       predRaster <- reproducible::Cache(
         predictBRTToRaster, covStack = covStack, predictors = predSel, brtModel = brtM,
-        thresh = brtPerf$thresh, cachePath = cachePath,
+        thresh = brtPerf$thresh, omitArgs = "covStack", cachePath = cachePath,
+        .cacheExtra = list(covLayers = layerContentDigest(covStack, predSel)),
         userTags = c("modelGerLandscape", "predict", spClean, as.character(yr)))
       terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", yr, ": saved -> ", basename(outTif))

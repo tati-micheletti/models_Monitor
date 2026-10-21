@@ -28,23 +28,16 @@ uncLonLatToLAEA <- function(lon, lat) {
         y = 3210000 + (B / D) * (cos(beta0) * sin(beta) - sin(beta0) * cos(beta) * cos(lam - lam0)))
 }
 
-#' German national outline (GADM level 0, as in the baseline) in EPSG:3035, built from the lon/lat vertices with `uncLonLatToLAEA()`
-#' (never through a GDAL/PROJ transformation, see above) and labelled with the CRS of the predictions. Stops if the result is not in Germany's box.
-#' @param gadmDir folder of the geodata cache (inputs/predictors/raw/gadm); @param crs CRS of the rasters it will be used with.
-uncOutlineLAEA <- function(gadmDir, crs) {
-  if (!requireNamespace("geodata", quietly = TRUE))
-    stop("The regional step needs the 'geodata' package (national outline); the baseline regional index needs it too.")
-  dir.create(gadmDir, recursive = TRUE, showWarnings = FALSE)
-  g <- geodata::gadm(country = "DEU", level = 0, path = gadmDir)                 # lon/lat
-  v <- terra::geom(g); xy <- uncLonLatToLAEA(v[, "x"], v[, "y"])
-  out <- terra::vect(cbind(v[, c("geom", "part")], x = xy[, "x"], y = xy[, "y"], hole = v[, "hole"]), type = "polygons", crs = crs)
-  e <- as.vector(terra::ext(out))
-  if (!(e[1] > 3.9e6 && e[2] < 4.8e6 && e[3] > 2.6e6 && e[4] < 3.7e6))
-    stop("German outline outside Germany's EPSG:3035 box: x ", round(e[1]), "-", round(e[2]), ", y ", round(e[3]), "-", round(e[4]))
-  out
+#' The study area (reporting area) in EPSG:3035 (DECISIONS.md 2026-10-21): the spec in `options("birdMonitor.studyAreaSpec")` (set by tools/sharedConfig.R from `sharedStudyArea`,
+#' i.e. Germany unless changed) or the one given, built by `buildStudyArea()` (studyArea.R, identical in every module) from the lon/lat vertices with the closed-form `uncLonLatToLAEA()`
+#' (never through a GDAL/PROJ transformation, see above) and labelled with the CRS of the predictions. The name is historical (it was the German outline).
+#' @param gadmDir folder of the geodata cache (inputs/predictors/raw/gadm); @param crs CRS of the rasters it will be used with; @param spec study-area spec or NULL.
+uncOutlineLAEA <- function(gadmDir, crs, spec = getOption("birdMonitor.studyAreaSpec")) {
+  if (is.null(spec)) spec <- list(label = "Germany", countries = "DEU", regions = NULL, shapefile = NULL)      # the default of the pipeline when no spec has been set
+  buildStudyArea(spec, gadmDir, crs)
 }
 
-#' German outline for the regional step, in the CRS `crs` of the predictions (inputs/predictors/raw/gadm cache, as in the baseline)
+#' Study-area outline for the regional step, in the CRS `crs` of the predictions (inputs/predictors/raw/gadm cache)
 uncGermanyBoundary <- function(cfg, crs) uncOutlineLAEA(file.path(cfg$inputRoot, "predictors", "raw", "gadm"), crs)
 
 #' Coarse grid of one cell size: the 200 m window cropped to the outline, then aggregated by the same factor as the baseline

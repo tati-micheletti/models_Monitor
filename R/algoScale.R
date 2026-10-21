@@ -113,14 +113,21 @@ algoScaleRun <- function(cfg, sp, scale, algo, threads = 1L, years = uncAllYears
   for (yr in years) {
     out <- ensFile(cfg, sp, scale, algo, "pred", yr)
     inputs <- c(fMod, if (scale == "climate") ensClimateFile(cfg, sp, yr))
-    if (isValidPredictionRaster(out) && all(file.mtime(out) >= file.mtime(inputs[file.exists(inputs)]))) next
+    newerThanInputs <- isValidPredictionRaster(out) && all(file.mtime(out) >= file.mtime(inputs[file.exists(inputs)]))
     cov <- ensCovStack(cfg, sp, scale, yr)
     if (is.null(cov)) { message(tag, " ", yr, ": covariates unavailable -- skipped"); next }
-    miss <- setdiff(predSel, c(names(cov), "x", "y"))
+    miss <- setdiff(predSel, c(names(cov), gsub("_[0-9]{4}$", "", names(cov)), "x", "y"))
     if (length(miss)) { warning(tag, " ", yr, ": missing predictors ", paste(miss, collapse = ", ")); next }
+    # Species-level freshness: a map made from the habitat or landscape covariates also needs the digest of the content of exactly the layers this species uses to be the one it was made with
+    # (sidecar <map>.covdigest). A change in a layer the species does not use leaves its maps alone; a map without a sidecar (made before 2026-10-21) is remade once.
+    covDigest <- if (scale == "climate") NA_character_ else layerContentDigest(cov, predSel, file = if (scale == "habitat") uncCovcacheFile(cfg, sp, yr) else NULL)
+    digestFile <- paste0(out, ".covdigest")
+    digestOk <- is.na(covDigest) || (file.exists(digestFile) && identical(readLines(digestFile, warn = FALSE)[1], covDigest))
+    if (newerThanInputs && digestOk) next
     t0 <- Sys.time()
     r <- predictModelToRaster(cov, predSel, function(df) algoPredict(fit, df), thresh = perf$thresh)
     terra::writeRaster(r, out, overwrite = TRUE)
+    if (!is.na(covDigest)) writeLines(covDigest, digestFile)
     message(tag, " ", yr, ": saved ", basename(out), " (", round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min)")
     rm(cov, r); invisible(gc())
   }

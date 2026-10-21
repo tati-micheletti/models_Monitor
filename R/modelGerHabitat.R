@@ -154,9 +154,13 @@ modelGerHabitat <- function(inputsData, predictionYears, processedRoot, outputRo
         next
       }
 
+      # Species-level cache key: the stack is not hashed as a whole; the key holds the content of exactly the layers this species uses (layerContentDigest), so a change in a layer it does not
+      # use (e.g. hedges, heterogeneity) does not re-predict it (DECISIONS.md 2026-10-21).
+      covFile <- file.path(outputRoot, "uncertainty", "covcache", scaleLabel(resM), paste0("habitat_", yr, ".tif"))
       predRaster <- reproducible::Cache(
         predictBRTToRaster, covStack = covStack, predictors = predSel, brtModel = brtM,
-        thresh = brtPerf$thresh, cachePath = cachePath,
+        thresh = brtPerf$thresh, omitArgs = "covStack", cachePath = cachePath,
+        .cacheExtra = list(covLayers = layerContentDigest(covStack, predSel, file = if (file.exists(covFile)) covFile else NULL)),
         userTags = c("modelGerHabitat", "predict", spClean, as.character(yr)))
       terra::writeRaster(predRaster, outTif, overwrite = TRUE)
       message("Year ", yr, ": saved -> ", basename(outTif))

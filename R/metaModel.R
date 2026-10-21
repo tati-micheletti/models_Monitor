@@ -78,10 +78,7 @@ metaModel <- function(inputsDataGerHabitat, habitatYears, predictionYears, model
   # real extent is a small fraction of that.
   bootRefRaster <- refRaster
   if (nBootTrend > 0) {
-    germany <- geodata::gadm(country = "DEU", level = 0,
-                              path = if (is.null(gadmCacheDir)) tempdir() else gadmCacheDir)
-    germanyProj <- terra::project(germany, terra::crs(refRaster))
-    bootRefRaster <- terra::crop(refRaster, germanyProj)
+    bootRefRaster <- terra::crop(refRaster, uncOutlineLAEA(if (is.null(gadmCacheDir)) tempdir() else gadmCacheDir, terra::crs(refRaster)))   # the study area (closed-form outline, no PROJ transformation)
   }
 
   result <- list()
