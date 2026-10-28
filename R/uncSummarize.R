@@ -166,9 +166,11 @@ uncCommunityBand <- function(cfg, band) {
   }
 
   y1 <- cfg$currentYear
-  if (y1 %in% yrs && !file.exists(pf("SRprob", y1))) {
-    acc <- accumulate(lapply(cfg$species, function(sp) uncReadBandYear(cfg, sp, y1, band$k)))
-    if (!is.null(acc)) uncWritePiece(tmpl, acc$cells, uncSummarizeMatrix(acc$S, cfg$probs), pf("SRprob", y1))
+  for (yr in yrs) {                                          # expected richness of EVERY mapped year (the Monitor shows it per year); was the report year only
+    if (file.exists(pf("SRprob", yr))) next
+    acc <- accumulate(lapply(cfg$species, function(sp) uncReadBandYear(cfg, sp, yr, band$k)))
+    if (!is.null(acc)) uncWritePiece(tmpl, acc$cells, uncSummarizeMatrix(acc$S, cfg$probs), pf("SRprob", yr))
+    rm(acc); invisible(gc(verbose = FALSE))
   }
   for (comp in names(uncComparisons(cfg))) {
     y0 <- uncComparisons(cfg)[[comp]]
