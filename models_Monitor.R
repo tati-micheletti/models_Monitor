@@ -93,9 +93,9 @@ defineModule(sim, list(
                     "above. Otherwise a named list, species -> scale -> resolution (m),",
                     "produced by extractResolutionConfig() (sharedSpeciesConfig.R, repo",
                     "root) from speciesConfig_general.csv's resolution_m column -- e.g. a",
-                    "species with a coarser habitat range than the shared default (Milvus",
-                    "milvus at a 15km landscape window instead of the shared 1km -- see",
-                    "DECISIONS.md's 2026-09-28 entry). Resolved once by the orchestrating",
+                    "species with a different landscape window than the shared default",
+                    "(currently Lanius collurio at 700 m and Buteo buteo at 5000 m instead of",
+                    "the shared 1000 m -- see DECISIONS.md's 2026-09-28 entry). Resolved once by the orchestrating",
                     "script and passed in as a plain value, same pattern as sharedConfig.R's",
                     "other shared values. See resolveResolutionM()."),
 
@@ -155,10 +155,14 @@ defineModule(sim, list(
                     "GAM, random forest; \"ens_brt-gam\", ... see ensTag()): it combines the ENSEMBLE map of each scale (ensembleScaleRun()) and",
                     "writes to its own folder <metamodel label>_<name>."),
     defineParameter("metaHonestEval", "logical", TRUE, NA, NA,
-                    "TRUE (default): the meta-model's reported accuracy (<species>_perf_meta.rds) is computed on",
-                    "OUT-OF-FOLD scale predictions (each habitat record predicted by models that never saw its block;",
-                    "see metaOutOfFoldCheck()). FALSE: the old in-sample number (flattered, AUC ~0.99). The maps do not",
-                    "depend on this; the in-sample row is always saved as <species>_perf_meta_inSample.rds."),
+                    "TRUE (default): the ridge WEIGHTS of the meta-model are trained on OUT-OF-FOLD scale predictions",
+                    "(each habitat record predicted by models that never saw its block; see metaOutOfFoldCheck() and",
+                    "metaOutOfFoldEnsemble()), and the reported accuracy (<species>_perf_meta.rds) and the binary-map",
+                    "threshold come from the same inputs. The out-of-fold step must succeed, otherwise the task stops.",
+                    "FALSE: the weights, the accuracy and the threshold all come from in-sample inputs (the main models'",
+                    "predictions at the training records: flattered, AUC ~0.99). This changes the weights and therefore",
+                    "every meta map and everything built on the maps (indices, trends, change maps). The in-sample",
+                    "accuracy is always saved as <species>_perf_meta_inSample.rds."),
 
     ## Uncertainty (option B: spatial-block bootstrap of the BRTs) -- see UNCERTAINTY.md. Off unless
     ## uncertaintyReps is set. Results go to <outputPath>/uncertainty[_<tag>]/. ----------------------

@@ -96,7 +96,7 @@ modelEurope <- function(inputsData, climateTargetYears, climateWindowLength,
     message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),
             " | D2 = ", round(brtPerf$D2, 3))
     if (brtPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
-    message("D2 at occurrence locations: ", round(evalResult$explDev, 3))
+    message("D2 in-sample (all training rows, optimistic; the block-CV D2 above is the honest one): ", round(evalResult$explDev, 3))
     saveRDS(data.frame(species = sp, D2 = evalResult$explDev),
             file.path(outputDir, paste0(spClean, "_expl_dev_EU.rds")))
 

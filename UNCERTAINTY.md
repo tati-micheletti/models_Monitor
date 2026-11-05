@@ -156,8 +156,9 @@ nothing is predicted outside Germany) is planned after the Steering Consortium m
 - Years before the habitat training years (2005–2021 here) are hindcasts that assume the 2022–2025 relationships hold;
   the intervals do **not** include that extrapolation uncertainty, and per-pixel "trends" over 2005–2025 are driven by
   how the covariates changed, not by independent evidence about the birds.
-- As in the baseline, each scale's BRT is evaluated at its own training records when the meta-model is fitted
-  (in-sample suitability); the bootstrap reproduces that choice, it does not correct for it.
+- As in the baseline (with the default `metaHonestEval = TRUE`), the meta-model weights are fitted on out-of-fold scale
+  predictions (step 4), not on in-sample ones; the bootstrap reproduces that choice. In the baseline, the
+  out-of-fold prediction at the landscape and climate scales is an approximation (the fold of the nearest habitat record is used, DECISIONS.md 2026-10-06).
 - `shareDecrease` / `shareIncrease` are shares of replicates, not probabilities in a Bayesian sense, and have no threshold:
   a change of −0.0001 counts as a decrease. Read them together with `deltaLwr` / `deltaUpr`.
 - The climate scale is resampled in blocks of the cross-validation block size, capped at 1500 km: about 13 blocks for Europe.

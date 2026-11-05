@@ -9,7 +9,7 @@
 #' (falling back to `sharedResolutionM` when unset), so covariates and
 #' outputs are read/written to that species' own `scale_X` folder -- species
 #' sharing a resolution also share one cached covariate stack per year (e.g.
-#' Milvus milvus at a coarser 15km landscape window than the shared 1km
+#' Buteo buteo at a coarser 5000 m landscape window than the shared 1000 m
 #' default -- see DECISIONS.md's 2026-09-28 entry).
 #'
 #' @param inputsData Named list (by species) with `data`/`predictors`, from
@@ -103,7 +103,7 @@ modelGerLandscape <- function(inputsData, predictionYears, processedRoot, output
     message("Performance: AUC = ", round(brtPerf$AUC, 3), " | TSS = ", round(brtPerf$TSS, 3),
             " | D2 = ", round(brtPerf$D2, 3))
     if (brtPerf$AUC < 0.7) warning("AUC < 0.7 for ", sp, " -- interpret with caution.")
-    message("D2 at occurrence locations: ", round(evalResult$explDev, 3))
+    message("D2 in-sample (all training rows, optimistic; the block-CV D2 above is the honest one): ", round(evalResult$explDev, 3))
     saveRDS(data.frame(species = sp, D2 = evalResult$explDev),
             file.path(outputDir, paste0(spClean, "_expl_dev_landscape.rds")))
 
@@ -177,8 +177,10 @@ fitBRTOneSpecies <- function(sp, spPa, predSel, startingLR) {
 #' @param spPa data.frame. This species' model-ready table.
 #' @param predSel Character vector. Resolved predictor columns.
 #' @param brtM A fitted `gbm.step()` model.
-#' @return List with `perf` (the `evalSDM()` row), `explDev` (deviance
-#'   explained at occurrence locations) and `foldModels` (the per-fold refits,
+#' @return List with `perf` (the `evalSDM()` row, out-of-fold: the honest
+#'   numbers), `explDev` (IN-SAMPLE deviance explained of the main model on
+#'   all training rows, presences and absences; optimistic, saved as
+#'   `<species>_expl_dev_<scale>.rds`) and `foldModels` (the per-fold refits,
 #'   saved by the callers as `<species>_foldModels_<scale>.rds`).
 evalBRTOneSpecies <- function(sp, spPa, predSel, brtM) {
   message("Running block cross-validation...")

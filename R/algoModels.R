@@ -18,8 +18,8 @@
 #'         several cores (a documented deviation, decided 2026-10-07), with `randomForest`'s regression defaults (`mtry = max(floor(p/3), 1)`,
 #'         `min.node.size = 5`, bootstrap sampling).
 #'   nn  : feed-forward neural network (`nnet`, one hidden layer, logistic output, weight decay), predictors standardised, the average of
-#'         `nRep` fits from different random starts (a single start is unstable). FIRST VERSION with fixed size/decay (not tuned); an addition
-#'         beyond Wiedenroth et al.
+#'         `nRep` fits from different random starts (a single start is unstable). Fixed size/decay, not tuned per species: 3 hidden units,
+#'         decay 0.1, up to 1000 iterations, `nRep = 5` (see `algoFitNN()`). An addition beyond Wiedenroth et al.
 
 ALGO_MEMBERS <- c("brt", "glm", "gam", "rf", "nn")
 
