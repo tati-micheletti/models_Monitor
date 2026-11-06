@@ -100,7 +100,7 @@ stampCoversWorkingArea <- function(stamp, wk, tolM = 1) {
 #' Crop and mask every processed predictor layer to the study area (before anything is extracted from it)
 #'
 #' Walks `processedRoot/scale_*/*.tif`. Each layer is cropped to the extent of the study area plus the buffer of its scale and the cells outside the (buffered) area are set to
-#' NA; the file is replaced (written to `.part` first). A sidecar `<file>.studyarea` holds the fingerprint, so a layer is only redone when the area or the buffer changes.
+#' NA; the file is replaced (written to `.part` first). A sidecar `<file>.studyarea` holds the fingerprint, so a layer is only redone when the area or the buffer changes, or when the file is NEWER than its sidecar (it was written after it was stamped; 2026-11-05).
 #' Layers are derived products (the raw downloads are never touched). Buffers: climate scale `climatePredictBufferM` (one coarse cell, so the resampling to the fine grids has
 #' neighbours at the border), all other scales `recordsBufferM`. The one climate layer the climate model is TRAINED on (the window ending in `ebba2TrainingYear`) is left alone:
 #' the climate model is fitted on all of Europe (where the EBBA2 atlas is), only the prediction windows follow the study area.
@@ -124,7 +124,11 @@ applyStudyAreaToProcessed <- function(processedRoot, area, recordsBufferM = 1000
     for (f in list.files(d, pattern = "[.]tif$", full.names = TRUE)) {
       sf <- paste0(f, ".studyarea")
       if (isClimate && grepl(paste0("bioclim_[0-9]{4}-", ebba2TrainingYear, "_"), basename(f))) { rows[[length(rows) + 1]] <- data.frame(file = f, action = "training window, left as it is"); next }
-      if (file.exists(sf) && identical(readLines(sf, warn = FALSE)[1], stamp)) { rows[[length(rows) + 1]] <- data.frame(file = f, action = "current"); next }
+      # 2026-11-05: a marker OLDER than its file does not count. The heterogeneity and unmapped-share files of the v3 prep were rewritten (uncropped) while the markers of the 29 October files stayed, with the same
+      # fingerprint, so they were taken as "current" and never cropped: the 2024-2025 layers kept the large CTM grid (3300 x 4500 cells) next to the cropped land use (3217 x 4346) and the stack of the habitat covariates
+      # stopped with "[rast] extents do not match". A file written after its marker may be uncropped: crop it again (cropping an already cropped file changes nothing).
+      markerFresh <- file.exists(sf) && file.mtime(sf) >= file.mtime(f) - 2
+      if (file.exists(sf) && identical(readLines(sf, warn = FALSE)[1], stamp) && markerFresh) { rows[[length(rows) + 1]] <- data.frame(file = f, action = "current"); next }
       if (file.exists(sf) && !stampCoversWorkingArea(readLines(sf, warn = FALSE)[1], wk))
         stop("applyStudyAreaToProcessed(): ", f, " was cropped for a SMALLER area than the current one (stamp: ", readLines(sf, warn = FALSE)[1], "); cropping is done in place, so the cells outside the old area are gone. ",
              "Re-make the processed layers of ", basename(d), " (move them aside and rerun the preparation) before running for this area.")
