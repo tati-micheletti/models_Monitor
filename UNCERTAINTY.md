@@ -167,10 +167,12 @@ nothing is predicted outside Germany) is planned after the Steering Consortium m
 
 1. Hyperparameter-tuning uncertainty (settings fixed from the main fit).
 2. Error in the predictor layers (land use, climate, DEM treated as exact).
-3. Structural / model-form uncertainty (one algorithm per scale; the algorithm ensemble is planned, improvements.md item 7/15).
+3. Structural / model-form uncertainty beyond the ensemble: the members (BRT, GLM, GAM, NN, RF) are refitted on the same block draws and the ridge meta-model has its own coefficients per replicate, but the choice of members, formulas and predictors is not resampled.
 4. Survey-design bias, and spatial/temporal autocorrelation beyond what block resampling captures.
 5. The thinning randomness of the occurrence data (thinning is part of the data preparation, not resampled here).
 6. The SMOOTHED regional index maps (smoothing is applied to the final raw result only; the raw regional index has intervals, see above).
+7. Dependence between species (added 2026-11-10). The draw seed contains the species name (`stableSeed(c("bootDraw", sp, scaleKey, b))` in `R/uncFit.R`): replicate b of one species uses different blocks than replicate b of another. The species share most survey sites, so a real new sample of sites would shift them together; with independent draws their errors partly cancel in the geometric mean, and the band of the combined indices (national MSI, regional index) is probably too narrow. Not quantified. Blocks cannot simply be shared, because the block size is set per species (autocorrelation range). Decision after v3 (TODO.md, section A, item 16).
+8. Few replicates and fallbacks (added 2026-11-10). The 5th-95th percentile of 25 replicates rests on one or two extreme lines at each end. A member refit that fails is replaced by the main fit (`refit_fallbacks.csv`), which narrows the band slightly: report the number of replacements in the methods.
 
 ## Files
 
