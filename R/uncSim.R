@@ -11,7 +11,7 @@ uncCfgFromSim <- function(sim) {
   if (is.null(species) || length(species) == 0 || all(is.na(species))) species <- names(sim$inputsData$gerHabitat)
   if (is.null(species) || length(species) == 0)
     stop("uncertainty: no species -- set the uncertaintySpecies parameter (the full roster, in a stable order).")
-  uncCfgFromParams(
+  cfg <- uncCfgFromParams(
     inputRoot = inputPath(sim), outputRoot = outputPath(sim), species = species,
     predictionYears = p$predictionYears, habitatYears = p$habitatYears, resolutionConfig = p$resolutionConfig,
     climateResolutionM = p$climateResolutionM, habitatResolutionM = p$habitatResolutionM,
@@ -21,6 +21,8 @@ uncCfgFromSim <- function(sim) {
     probs = p$uncertaintyProbs, tag = p$uncertaintyTag, baselineYear = p$uncertaintyBaselineYear,
     currentYear = p$uncertaintyCurrentYear, codeRoot = getwd(),
     members = if (all(is.na(p$uncertaintyMembers))) NULL else p$uncertaintyMembers)
+  cfg$groupSuffix <- if (is.null(p$uncertaintyGroupSuffix) || is.na(p$uncertaintyGroupSuffix)) "" else p$uncertaintyGroupSuffix     # species group of the community step ("" = group "all")
+  cfg
 }
 
 #' Handle one uncertainty event

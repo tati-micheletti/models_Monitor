@@ -143,7 +143,7 @@ uncSummarizeSpeciesBand <- function(cfg, sp, band) {
 #' Community layers per band (needs all species): expected richness (sum of probabilities), mean change in probability and
 #' Bray-Curtis turnover between the two years of each comparison (pieces `bcDissim_<comparison>`)
 uncCommunityBand <- function(cfg, band) {
-  pieceDir <- file.path(uncRoot(cfg), "community", "pieces"); dir.create(pieceDir, recursive = TRUE, showWarnings = FALSE)
+  pieceDir <- file.path(uncRoot(cfg), paste0("community", cfg$groupSuffix), "pieces"); dir.create(pieceDir, recursive = TRUE, showWarnings = FALSE)
   tmpl <- band$template
   stamp <- paste(vapply(cfg$species, function(s) paste(uncRunIds(cfg, s, band$k), collapse = ","), character(1)), collapse = "|")
   uncPieceStamp(pieceDir, band$k, stamp, check = TRUE)

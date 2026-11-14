@@ -148,8 +148,8 @@ uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
 #' (`community/` -> `community_germany/`, `sp = NULL`): same files, pixels outside the German outline set to NA. The originals stay.
 #' TEMPORARY (DECISIONS.md 2026-10-08): the proper fix is to cut all inputs to the study area at the source.
 uncMaskMaps <- function(cfg, sp = NULL, outline = NULL) {
-  src <- if (is.null(sp)) file.path(uncRoot(cfg), "community") else uncSpDir(cfg, sp, "maps")
-  dst <- if (is.null(sp)) file.path(uncRoot(cfg), "community_germany") else file.path(uncSpDir(cfg, sp), "maps_germany")
+  src <- if (is.null(sp)) file.path(uncRoot(cfg), paste0("community", cfg$groupSuffix)) else uncSpDir(cfg, sp, "maps")                      # cfg$groupSuffix: species group ("" = "all", as always)
+  dst <- if (is.null(sp)) file.path(uncRoot(cfg), paste0("community", cfg$groupSuffix, "_germany")) else file.path(uncSpDir(cfg, sp), "maps_germany")
   fs <- list.files(src, pattern = "[.]tif$", full.names = TRUE)
   if (!length(fs)) { message("No maps to mask in ", src); return(invisible(NULL)) }
   dir.create(dst, recursive = TRUE, showWarnings = FALSE)
