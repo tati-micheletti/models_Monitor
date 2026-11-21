@@ -154,8 +154,9 @@ uncOofSpecies <- function(cfg, sp, minPerClass = 10) {
     oneRepCk <- function(j) {
       f <- repF(j)
       if (file.exists(f)) { v <- tryCatch(readRDS(f), error = function(e) NULL); if (is.numeric(v) && length(v) == length(ctx$rows)) return(v) }
-      v <- oneRep(j)
+      tr0 <- Sys.time(); v <- oneRep(j)
       if (is.numeric(v) && length(v) == length(ctx$rows)) uncSaveRDS(v, f)
+      message(format(Sys.time(), "%b%d %H:%M:%S"), " mdls_M:uncertaintyOof ", scale, ": replicate ", ids[j], " done in ", round(as.numeric(difftime(Sys.time(), tr0, units = "mins")), 1), " min")   # shows WHICH replicate is slow
       v
     }
     nDone <- sum(file.exists(vapply(seq_along(ids), repF, character(1)))); if (nDone) message(scale, ": ", nDone, " of ", length(ids), " replicates read from their checkpoints")
