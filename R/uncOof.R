@@ -148,11 +148,23 @@ uncOofSpecies <- function(cfg, sp, minPerClass = 10) {
     # warm the (replicate-independent) covariate/cell cache once, so forked workers do not each rebuild it
     if (scale != "habitat") for (k in folds) { pos <- which(ctx$foldOf[[scale]] == k)
       for (yr in unique(ctx$yrs[pos])) invisible(uncOofCells(ctx, scale, yr, k, mod$predSel, pos[ctx$yrs[pos] == yr])) }
-    res <- if (cfg$cores > 1L && length(ids) > 1L) parallel::mclapply(seq_along(ids), oneRep, mc.cores = min(cfg$cores, length(ids))) else lapply(seq_along(ids), oneRep)
+    # 2026-11-21: a checkpoint per REPLICATE (not only per scale) and dynamic scheduling (mc.preschedule = FALSE): a free worker takes the next replicate, so one slow replicate no longer
+    # keeps its worker (and 7 idle cores) busy for a day, and a task that hits its time limit loses at most the replicates in flight. The results do not change: the seeds depend on (species, scale, member, replicate, fold).
+    repF <- function(j) file.path(dirname(outF), paste0("oofrep_", cfg$repLabel, "_", scale, "_", ids[j], ".rds"))
+    oneRepCk <- function(j) {
+      f <- repF(j)
+      if (file.exists(f)) { v <- tryCatch(readRDS(f), error = function(e) NULL); if (is.numeric(v) && length(v) == length(ctx$rows)) return(v) }
+      v <- oneRep(j)
+      if (is.numeric(v) && length(v) == length(ctx$rows)) uncSaveRDS(v, f)
+      v
+    }
+    nDone <- sum(file.exists(vapply(seq_along(ids), repF, character(1)))); if (nDone) message(scale, ": ", nDone, " of ", length(ids), " replicates read from their checkpoints")
+    res <- if (cfg$cores > 1L && length(ids) > 1L) parallel::mclapply(seq_along(ids), oneRepCk, mc.cores = min(cfg$cores, length(ids)), mc.preschedule = FALSE) else lapply(seq_along(ids), oneRepCk)
     bad <- vapply(res, function(r) !is.numeric(r) || length(r) != length(ctx$rows), logical(1))
     if (any(bad)) stop(scale, ": ", sum(bad), " replicate(s) failed in the out-of-fold step, e.g. replicate ", ids[which(bad)[1]])
     for (j in seq_along(ids)) S[, keys[[scale]], j] <- res[[j]]
     uncSaveRDS(list(ids = ids, v = S[, keys[[scale]], ]), partF)
+    invisible(file.remove(Filter(file.exists, vapply(seq_along(ids), repF, character(1)))))
     message(scale, ": out-of-fold inputs of ", length(ids), " replicates (", length(folds), " folds each) in ",
             round(as.numeric(difftime(Sys.time(), t0, units = "mins")), 1), " min")
   }
