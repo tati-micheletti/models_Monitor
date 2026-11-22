@@ -50,6 +50,18 @@ algoPredict <- function(fit, newdata) {
   pmin(pmax(as.numeric(p), 0), 1)
 }
 
+#' Run one mgcv::gam call under a time cap (2026-11-22)
+#'
+#' The cap is `getOption("birdmonitor.gamCapSecs")` (default Inf = no cap, so the main fits and every other step are unchanged); the out-of-fold step of the uncertainty workflow
+#' sets it (uncOof.R). A fit that exceeds the cap stops with an error, which the callers treat like any other non-convergence and move on to the next rung of the ladder.
+#' Why: on EVE a few landscape-scale fold refits of Vanellus vanellus (rare land-use predictors almost without presences: hops, heath_moor, grapevine) did not converge for hours
+#' with any rung but the last one (dropping the sparsest predictors), which converges in 0.5 minutes (tools/diagGamFolds.R, diagGamAlt.R, diagGamDrop.R).
+algoGamCapped <- function(expr) {
+  cap <- getOption("birdmonitor.gamCapSecs", Inf)
+  if (is.finite(cap)) { setTimeLimit(elapsed = cap, transient = TRUE); on.exit(setTimeLimit(elapsed = Inf, transient = TRUE), add = TRUE) }
+  expr
+}
+
 #' Refit the SAME specification on other data (no new model selection)
 #'
 #' Used for the block cross-validation and for bootstrap replicates, like the reference code's `update(model, data = ...)`: the selected terms,
@@ -68,7 +80,7 @@ algoRegistry <- function() list(
              refit = function(fit, data, seed) {
                # the main fit's settings first; if that errors or does not converge on this resample (found on EVE 2026-10-09: 3-20 of 26 replicates per species),
                # the same robust ladder as the main fit (REML, efs optimiser, k = 3, then dropping the sparsest predictor)
-               m <- tryCatch(suppressWarnings(do.call(mgcv::gam, c(list(fit$formula, family = "binomial", data = data), fit$gamArgs))), error = function(e) NULL)
+               m <- tryCatch(suppressWarnings(algoGamCapped(do.call(mgcv::gam, c(list(fit$formula, family = "binomial", data = data), fit$gamArgs)))), error = function(e) NULL)
                if (!is.null(m) && isTRUE(m$converged)) { fit$model <- m; return(fit) }
                g <- algoFitGAM(data, fit$predSel, fit$response)
                fit$model <- g$model; fit$formula <- g$formula; fit$gamArgs <- g$gamArgs; fit$predSel <- g$predSel; fit$note <- paste0(fit$note, " | refit: ", g$note); fit },
@@ -110,7 +122,7 @@ algoFitGAM <- function(data, predSel, response) {
   repeat {
     for (kk in c(4, 3)) for (at in attempts) {
       f <- stats::as.formula(paste(response, "~", paste0("s(", used, ", k = ", kk, ")", collapse = " + ")))
-      m <- tryCatch(suppressWarnings(do.call(mgcv::gam, c(list(f, family = "binomial", data = data), at$args))), error = function(e) NULL)
+      m <- tryCatch(suppressWarnings(algoGamCapped(do.call(mgcv::gam, c(list(f, family = "binomial", data = data), at$args)))), error = function(e) NULL)
       if (!is.null(m) && isTRUE(m$converged))
         return(list(algo = "gam", model = m, formula = f, gamArgs = at$args, predSel = used, response = response,
                     note = paste0(note, if (kk != 4) "k = 3; " else "", at$label)))

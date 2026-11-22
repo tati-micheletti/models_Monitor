@@ -83,6 +83,8 @@ uncOofSpecies <- function(cfg, sp, minPerClass = 10) {
   spClean <- gsub(" ", "_", sp)
   outF <- file.path(uncSpDir(cfg, sp, "oof"), paste0("oof_", cfg$repLabel, ".rds"))
   if (file.exists(outF)) { message("Out-of-fold inputs exist -- skipping: ", outF); return(invisible(readRDS(outF))) }
+  # 2026-11-22: every GAM attempt of the out-of-fold refits gets a time cap (default 300 s; a normal fit takes 0.3-0.5 min), see algoGamCapped() in algoModels.R. BIRDMONITOR_GAM_CAP_SECS overrides it (Inf = no cap).
+  options(birdmonitor.gamCapSecs = as.numeric(Sys.getenv("BIRDMONITOR_GAM_CAP_SECS", "300")))
   ctx <- uncOofContext(cfg, sp)
   ids <- cfg$reps
   keys <- c(climate = "clim", landscape = "land", habitat = "hab")
