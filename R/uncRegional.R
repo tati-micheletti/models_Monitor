@@ -47,6 +47,13 @@ uncRegionalGrid <- function(win, bProj, cellSizeM) {
   list(template = terra::aggregate(terra::crop(win, bProj), fact = fact), fact = fact)
 }
 
+#' Is a regional band piece (`band<kk>.rds`) finished for ALL requested years? FALSE if the file is missing, unreadable, or lacks a requested year (2026-11-26).
+uncRegionalPieceComplete <- function(file, years) {
+  if (!file.exists(file)) return(FALSE)
+  x <- tryCatch(readRDS(file), error = function(e) NULL)
+  !is.null(x) && all(years %in% x$years)
+}
+
 #' Partial sums for one species and one band: for every year, per coarse cell and replicate, the sum of the predictions of the German
 #' pixels of this band and their number. Written per run label under `regional/<label>/band<kk>.rds`; finished files are skipped.
 #'
@@ -55,7 +62,8 @@ uncRegionalBand <- function(cfg, sp, band, win, bProj, cellSizesM) {
   labs <- uncRunLabels(cfg, sp)
   if (!length(labs)) { message(sp, ": no replicate predictions found -- nothing to do"); return(invisible(NULL)) }
   outOf <- function(lab) file.path(uncSpDir(cfg, sp, "regional", lab), sprintf("band%02d.rds", band$k))
-  todo <- labs[!vapply(labs, function(l) file.exists(outOf(l)), logical(1))]
+  # 2026-11-26: a finished piece is skipped only if it already holds EVERY requested year. Before, "the file exists" was enough, so a year added to a finished run (2026) never reached the regional index.
+  todo <- labs[!vapply(labs, function(l) uncRegionalPieceComplete(outOf(l), cfg$outYears), logical(1))]
   if (!length(todo)) return(invisible("cached"))
 
   tmpl <- band$template
@@ -158,7 +166,7 @@ uncMaskMaps <- function(cfg, sp = NULL, outline = NULL) {
   mk <- terra::rasterize(outline, r1[[1]], field = 1, touches = TRUE)
   for (f in fs) {
     out <- file.path(dst, basename(f))
-    if (file.exists(out)) next
+    if (file.exists(out) && file.mtime(out) >= file.mtime(f)) next      # 2026-11-26: a copy older than its source is stale (trend/change maps have no year in their name) and is made again
     r <- terra::rast(f); m <- if (isTRUE(terra::compareGeom(r, mk, stopOnError = FALSE))) mk else terra::rasterize(outline, r[[1]], field = 1, touches = TRUE)
     part <- sub("[.]tif$", ".part.tif", out)
     terra::writeRaster(terra::mask(r, m), part, overwrite = TRUE, datatype = "FLT4S", gdal = c("COMPRESS=DEFLATE", "PREDICTOR=3"))
