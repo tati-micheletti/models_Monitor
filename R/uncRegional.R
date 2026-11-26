@@ -1,4 +1,4 @@
-# Regional index (10 / 20 / 50 km grids) with uncertainty: per-replicate CELL MEANS of the 200 m predictions.
+# Regional index (10 km default; 1 / 5 km on request) with uncertainty: per-replicate CELL MEANS of the 200 m predictions.
 #
 # This module only produces the sufficient statistics: for every species, grid size, year and replicate, the mean probability of
 # occurrence of the 200 m pixels inside each coarse cell. The pixels are masked with the German national outline (GADM level 0, the
@@ -68,7 +68,7 @@ uncRegionalBand <- function(cfg, sp, band, win, bProj, cellSizesM) {
   if (!length(todo)) return(invisible("cached"))
 
   # 2026-11-26: a piece that holds all years but lacks some requested grid sizes (1 and 5 km added later) only gets the MISSING sizes computed and added; the sizes
-  # already in it (10/20/50 km, verified) are kept as they are. A piece that lacks years is recomputed for the requested sizes plus the sizes it already had.
+  # already in it (the verified 10 km grid) are kept as they are. A piece that lacks years is recomputed for the requested sizes plus the sizes it already had.
   old <- list(); sizesNow <- list()
   for (lab in todo) {
     o <- if (file.exists(outOf(lab))) tryCatch(readRDS(outOf(lab)), error = function(e) NULL) else NULL
@@ -123,7 +123,7 @@ uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
   labs <- uncRunLabels(cfg, sp); years <- cfg$outYears
   if (!length(labs)) { message(sp, ": no replicate predictions found"); return(invisible(NULL)) }
   natRows <- list()                                   # German national area means (all German pixels), from the first default grid's sums
-  natSizeM <- cellSizesM[cellSizesM %in% c(10000, 20000, 50000)][1]; if (is.na(natSizeM)) natSizeM <- -1
+  natSizeM <- if (10000 %in% cellSizesM) 10000 else -1
   for (cs in cellSizesM) {
     km <- cs / 1000; g <- uncRegionalGrid(win, bProj, cs); nc <- terra::ncell(g$template)
     pieces <- list(); idsAll <- integer(0); nGerAll <- NULL
@@ -141,7 +141,7 @@ uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
           S[e$cells, yi, ] <- S[e$cells, yi, ] + e$S; N[e$cells, yi, ] <- N[e$cells, yi, ] + e$N
         }
       }
-      # 2026-11-26: the national means are taken from the first of the default grids (10/20/50 km) in the run, so a 1/5 km-only run does not rewrite them (same numbers up to
+      # 2026-11-26: the national means are taken from the 10 km grid (the default), so a 1/5 km-only run does not rewrite them (same numbers up to
       # floating-point summation order, which would break the byte-for-byte comparison with the verified files); with no default grid in the run they are left as they are.
       if (cs == natSizeM) {                                       # national mean over the German pixels = sum of the cell sums / number of pixels
         Sy <- apply(S, c(2, 3), sum); Ny <- apply(N, c(2, 3), sum)
