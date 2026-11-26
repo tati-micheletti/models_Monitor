@@ -1,0 +1,12 @@
+# Test of reuseStoredBRT() (2026-11-26; from the repo root: Rscript modules/models_Monitor/tests/test_reuseStoredBRT.R)
+source("modules/models_Monitor/R/reuseStoredBRT.R")
+chk <- function(label, ok) { cat(if (isTRUE(ok)) "ok   " else "FAIL ", label, "\n"); if (!isTRUE(ok)) quit(status = 1) }
+d <- tempfile(); dir.create(d); fm <- file.path(d, "A_BRT_landscape.rds"); fp <- file.path(d, "A_perf_landscape.rds")
+Sys.unsetenv("BIRDMONITOR_REUSE_MODELS"); saveRDS(list(n.trees = 4750), fm); saveRDS(list(AUC = 0.84394, thresh = 0.46), fp)
+chk("default (variable unset): NULL even if the files exist, the model is fitted as before", is.null(reuseStoredBRT(fm, fp)))
+Sys.setenv(BIRDMONITOR_REUSE_MODELS = "0"); chk("variable not '1': NULL", is.null(suppressMessages(reuseStoredBRT(fm, fp))))
+Sys.setenv(BIRDMONITOR_REUSE_MODELS = "1"); r <- suppressMessages(reuseStoredBRT(fm, fp))
+chk("variable 1 and both files: the stored model and performance, unchanged", identical(r$model$n.trees, 4750) && identical(r$perf$thresh, 0.46))
+chk("a missing performance file: NULL (fitted as usual), not an error", is.null(suppressMessages(reuseStoredBRT(fm, file.path(d, "none.rds")))))
+chk("a missing model file: NULL", is.null(suppressMessages(reuseStoredBRT(file.path(d, "none.rds"), fp))))
+Sys.unsetenv("BIRDMONITOR_REUSE_MODELS"); cat("all passed\n")

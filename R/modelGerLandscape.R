@@ -74,6 +74,11 @@ modelGerLandscape <- function(inputsData, predictionYears, processedRoot, output
             sum(spPa$occurrence == 0), " abs)")
     message("Predictors (", length(predSel), "): ", paste(predSel, collapse = ", "))
 
+    # 2026-11-26: BIRDMONITOR_REUSE_MODELS=1 predicts with the STORED model of the run folder instead of refitting (reuseStoredBRT()); unset = as before
+    stored <- reuseStoredBRT(outModel, outPerf)
+    if (!is.null(stored)) {
+      brtM <- stored$model; brtPerf <- stored$perf
+    } else {
     startingLR <- resolveStartingLR(sp, spClean, defaultLR = initialLR, lrStateDir = outputDir,
                                      perSpeciesLR = perSpeciesLR, lrStateSuffix = "_landscape")
     brtM <- reproducible::Cache(
@@ -106,6 +111,7 @@ modelGerLandscape <- function(inputsData, predictionYears, processedRoot, output
     message("D2 in-sample (all training rows, optimistic; the block-CV D2 above is the honest one): ", round(evalResult$explDev, 3))
     saveRDS(data.frame(species = sp, D2 = evalResult$explDev),
             file.path(outputDir, paste0(spClean, "_expl_dev_landscape.rds")))
+    }      # end of the fit/eval branch (2026-11-26: skipped when the stored model is reused)
 
     message("Predicting onto German grid for ", length(predictionYears), " years...")
     spPredFiles <- list()
