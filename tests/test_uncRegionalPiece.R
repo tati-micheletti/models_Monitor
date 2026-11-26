@@ -8,4 +8,7 @@ chk("the same piece is NOT complete for 2017-2026 (the new year makes it stale)"
 chk("a missing file is not complete", !uncRegionalPieceComplete(file.path(d, "none.rds"), 2017:2025))
 writeLines("not an rds", g <- file.path(d, "bad.rds")); chk("an unreadable file is not complete (no error)", !uncRegionalPieceComplete(g, 2017:2025))
 saveRDS(list(years = integer(0)), h <- file.path(d, "empty.rds")); chk("a piece without years is not complete", !uncRegionalPieceComplete(h, 2017:2025))
+saveRDS(list(years = 2017:2025, bySize = list(`10000` = 1, `20000` = 1)), k <- file.path(d, "sized.rds"))
+chk("sizes present: complete", uncRegionalPieceComplete(k, 2017:2025, c(10000, 20000)))
+chk("a requested size the piece lacks (1000 m): NOT complete", !uncRegionalPieceComplete(k, 2017:2025, c(1000, 10000)))
 cat("all passed\n")

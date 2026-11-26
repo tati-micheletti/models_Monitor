@@ -48,10 +48,11 @@ uncRegionalGrid <- function(win, bProj, cellSizeM) {
 }
 
 #' Is a regional band piece (`band<kk>.rds`) finished for ALL requested years? FALSE if the file is missing, unreadable, or lacks a requested year (2026-11-26).
-uncRegionalPieceComplete <- function(file, years) {
+uncRegionalPieceComplete <- function(file, years, sizesM = NULL) {
   if (!file.exists(file)) return(FALSE)
   x <- tryCatch(readRDS(file), error = function(e) NULL)
-  !is.null(x) && all(years %in% x$years)
+  # 2026-11-26: `sizesM` (grid sizes in metres, optional) also has to be in the piece, so a grid size added later (1 and 5 km) is not mistaken for "cached".
+  !is.null(x) && all(years %in% x$years) && (is.null(sizesM) || all(as.character(sizesM) %in% names(x$bySize)))
 }
 
 #' Partial sums for one species and one band: for every year, per coarse cell and replicate, the sum of the predictions of the German
@@ -63,14 +64,27 @@ uncRegionalBand <- function(cfg, sp, band, win, bProj, cellSizesM) {
   if (!length(labs)) { message(sp, ": no replicate predictions found -- nothing to do"); return(invisible(NULL)) }
   outOf <- function(lab) file.path(uncSpDir(cfg, sp, "regional", lab), sprintf("band%02d.rds", band$k))
   # 2026-11-26: a finished piece is skipped only if it already holds EVERY requested year. Before, "the file exists" was enough, so a year added to a finished run (2026) never reached the regional index.
-  todo <- labs[!vapply(labs, function(l) uncRegionalPieceComplete(outOf(l), cfg$outYears), logical(1))]
+  todo <- labs[!vapply(labs, function(l) uncRegionalPieceComplete(outOf(l), cfg$outYears, cellSizesM), logical(1))]
   if (!length(todo)) return(invisible("cached"))
+
+  # 2026-11-26: a piece that holds all years but lacks some requested grid sizes (1 and 5 km added later) only gets the MISSING sizes computed and added; the sizes
+  # already in it (10/20/50 km, verified) are kept as they are. A piece that lacks years is recomputed for the requested sizes plus the sizes it already had.
+  old <- list(); sizesNow <- list()
+  for (lab in todo) {
+    o <- if (file.exists(outOf(lab))) tryCatch(readRDS(outOf(lab)), error = function(e) NULL) else NULL
+    have <- if (is.null(o)) character() else names(o$bySize)
+    canMerge <- !is.null(o) && all(cfg$outYears %in% o$years)
+    old[[lab]] <- if (canMerge) o else NULL
+    sizesNow[[lab]] <- if (canMerge) setdiff(as.character(cellSizesM), have) else union(as.character(cellSizesM), have)
+    rm(o)
+  }
+  allSizes <- unique(unlist(sizesNow, use.names = FALSE))
 
   tmpl <- band$template
   ger <- terra::rasterize(bProj, tmpl, field = 1, touches = TRUE)         # the same rule as terra::mask(x, outline) (touches = TRUE)
   gerIdx <- which(!is.na(terra::values(ger)[, 1])); rm(ger)
   lookup <- list(); nGer <- list()
-  for (cs in cellSizesM) {
+  for (cs in as.numeric(allSizes)) {
     g <- uncRegionalGrid(win, bProj, cs)
     cg <- rep(NA_integer_, terra::ncell(tmpl))
     if (length(gerIdx)) cg[gerIdx] <- as.integer(terra::cellFromXY(g$template, terra::xyFromCell(tmpl, gerIdx)))
@@ -78,14 +92,15 @@ uncRegionalBand <- function(cfg, sp, band, win, bProj, cellSizesM) {
     nGer[[as.character(cs)]] <- tabulate(cg[!is.na(cg)], nbins = terra::ncell(g$template))
   }
   for (lab in todo) {
-    perSize <- lapply(cellSizesM, function(cs) list(nGerman = nGer[[as.character(cs)]], perYear = list()))
-    names(perSize) <- as.character(cellSizesM)
+    csNow <- as.numeric(sizesNow[[lab]])
+    perSize <- lapply(csNow, function(cs) list(nGerman = nGer[[as.character(cs)]], perYear = list()))
+    names(perSize) <- as.character(csNow)
     ids <- NULL; yearsDone <- integer(0)
     for (yr in cfg$outYears) {
       f <- file.path(uncSpDir(cfg, sp, "pred", lab), sprintf("%d_band%02d.rds", yr, band$k))
       if (!file.exists(f)) next
       p <- uncReadInt16(f); ids <- p$ids; yearsDone <- c(yearsDone, yr)
-      for (cs in cellSizesM) {
+      for (cs in csNow) {
         cg <- lookup[[as.character(cs)]][p$idx]; keep <- !is.na(cg)
         if (!any(keep)) next
         P <- p$P[keep, , drop = FALSE]; ok <- !is.na(P); P[!ok] <- 0
@@ -94,9 +109,10 @@ uncRegionalBand <- function(cfg, sp, band, win, bProj, cellSizesM) {
       }
       rm(p)
     }
-    uncSaveRDS(list(species = sp, band = band$k, label = lab, ids = ids, years = yearsDone, bySize = perSize), outOf(lab))
+    bySize <- if (!is.null(old[[lab]])) c(old[[lab]]$bySize, perSize) else perSize
+    uncSaveRDS(list(species = sp, band = band$k, label = lab, ids = ids, years = yearsDone, bySize = bySize), outOf(lab))
     message(sp, " band ", band$k, " (", lab, "): regional partial sums for ", length(yearsDone), " years, ",
-            length(cellSizesM), " grids, ", length(gerIdx), " German pixels")
+            length(csNow), " grids computed (", length(bySize), " in the piece), ", length(gerIdx), " German pixels")
   }
   invisible("done")
 }
@@ -106,7 +122,8 @@ uncRegionalBand <- function(cfg, sp, band, win, bProj, cellSizesM) {
 uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
   labs <- uncRunLabels(cfg, sp); years <- cfg$outYears
   if (!length(labs)) { message(sp, ": no replicate predictions found"); return(invisible(NULL)) }
-  natRows <- list()                                   # German national area means (all German pixels), from the first grid's sums
+  natRows <- list()                                   # German national area means (all German pixels), from the first default grid's sums
+  natSizeM <- cellSizesM[cellSizesM %in% c(10000, 20000, 50000)][1]; if (is.na(natSizeM)) natSizeM <- -1
   for (cs in cellSizesM) {
     km <- cs / 1000; g <- uncRegionalGrid(win, bProj, cs); nc <- terra::ncell(g$template)
     pieces <- list(); idsAll <- integer(0); nGerAll <- NULL
@@ -124,7 +141,9 @@ uncRegionalAssemble <- function(cfg, sp, win, bProj, cellSizesM) {
           S[e$cells, yi, ] <- S[e$cells, yi, ] + e$S; N[e$cells, yi, ] <- N[e$cells, yi, ] + e$N
         }
       }
-      if (cs == cellSizesM[1]) {                                  # national mean over the German pixels = sum of the cell sums / number of pixels
+      # 2026-11-26: the national means are taken from the first of the default grids (10/20/50 km) in the run, so a 1/5 km-only run does not rewrite them (same numbers up to
+      # floating-point summation order, which would break the byte-for-byte comparison with the verified files); with no default grid in the run they are left as they are.
+      if (cs == natSizeM) {                                       # national mean over the German pixels = sum of the cell sums / number of pixels
         Sy <- apply(S, c(2, 3), sum); Ny <- apply(N, c(2, 3), sum)
         nr <- data.frame(species = sp, replicate = rep(ids, each = length(years)), year = rep(years, times = length(ids)),
                          areaMean = as.vector(Sy / Ny), nCells = as.vector(Ny))
